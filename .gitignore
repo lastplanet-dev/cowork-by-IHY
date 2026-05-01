@@ -1,0 +1,8 @@
+node_modules
+.next
+.env
+prisma/dev.db
+.npm-cache
+.npm-cache-fast
+.npm-cache-mirror
+*.log

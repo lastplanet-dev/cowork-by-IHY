@@ -1,0 +1,294 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+}
+
+enum CustomerType {
+  INDIVIDUAL
+  PARTNER_ORGANIZATION
+  CORPORATE
+  WALK_IN
+}
+
+enum PaymentMethod {
+  CASH
+  KBZPAY
+  WAVEPAY
+  BANK_TRANSFER
+  CARD
+  OTHER
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+  PARTIALLY_PAID
+  WAIVED
+  VOID
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum RoomType {
+  MEETING_ROOM
+  TRAINING_ROOM
+  FOCUS_ROOM
+  PHONE_BOOTH
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+enum CoffeeKind {
+  FREE_ENTITLEMENT
+  UPGRADE
+  PAID_ITEM
+}
+
+enum PaymentFor {
+  PASS
+  BOOKING
+  COFFEE
+  UPGRADE
+  MANUAL
+}
+
+model StaffUser {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  role         Role     @default(ADMIN)
+  isActive     Boolean  @default(true)
+  canSettings  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  payments     Payment[] @relation("PaymentReceiver")
+  adjustments  PaymentAdjustment[] @relation("PaymentAdjuster")
+  activities   ActivityLog[]
+}
+
+model Customer {
+  id                         String   @id @default(cuid())
+  fullName                   String
+  phone                      String
+  email                      String?
+  organization               String?
+  customerType               CustomerType @default(INDIVIDUAL)
+  notes                      String?
+  activePassName             String?
+  remainingCoworkingDays     Int      @default(0)
+  remainingMeetingCreditHours Float   @default(0)
+  membershipExpiresAt        DateTime?
+  isInside                   Boolean  @default(false)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  memberships MembershipPurchase[]
+  payments    Payment[]
+  bookings    Booking[]
+  checkIns    CheckIn[]
+  coffeeSales CoffeeSale[]
+}
+
+model PassType {
+  id                         String   @id @default(cuid())
+  name                       String   @unique
+  price                      Int
+  coworkingDays              Int
+  validityDays               Int
+  meetingCreditHours         Float
+  freeCoffeePerCheckIn       Int      @default(1)
+  isActive                   Boolean  @default(true)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  purchases MembershipPurchase[]
+}
+
+model MembershipPurchase {
+  id                         String   @id @default(cuid())
+  customerId                 String
+  passTypeId                 String
+  passName                   String
+  priceBeforeDiscount        Int
+  discountType               DiscountType?
+  discountValue              Int?
+  discountReason             String?
+  discountApprovedBy         String?
+  discountNotes              String?
+  finalPrice                 Int
+  coworkingDaysAdded         Int
+  meetingCreditHoursAdded    Float
+  startsAt                   DateTime @default(now())
+  expiresAt                  DateTime
+  createdAt                  DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  passType PassType @relation(fields: [passTypeId], references: [id])
+  payment  Payment?
+}
+
+model CheckIn {
+  id                  String   @id @default(cuid())
+  customerId          String
+  checkedInAt         DateTime @default(now())
+  checkedOutAt        DateTime?
+  wifiPasswordShown   String
+  freeCoffeeEntitled  Boolean  @default(true)
+  overrideDuplicate   Boolean  @default(false)
+  notes               String?
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  coffeeSales CoffeeSale[]
+
+  @@index([customerId, checkedInAt])
+}
+
+model CoffeeItem {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  price     Int
+  kind      CoffeeKind @default(PAID_ITEM)
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  sales CoffeeSale[]
+}
+
+model CoffeeSale {
+  id               String   @id @default(cuid())
+  customerId       String?
+  checkInId        String?
+  coffeeItemId     String
+  quantity         Int      @default(1)
+  unitPrice        Int
+  discountType     DiscountType?
+  discountValue    Int?
+  discountReason   String?
+  finalAmount      Int
+  soldAt           DateTime @default(now())
+
+  customer   Customer?   @relation(fields: [customerId], references: [id])
+  checkIn    CheckIn?    @relation(fields: [checkInId], references: [id])
+  coffeeItem CoffeeItem  @relation(fields: [coffeeItemId], references: [id])
+  payment    Payment?
+}
+
+model Room {
+  id                     String   @id @default(cuid())
+  name                   String
+  roomType               RoomType
+  capacity               Int
+  hourlyRate             Int
+  halfDayRate            Int?
+  fullDayRate            Int?
+  isActive               Boolean  @default(true)
+  creditsCanBeUsed       Boolean  @default(false)
+  minBookingMinutes      Int      @default(60)
+  bufferMinutes          Int      @default(0)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  bookings Booking[]
+}
+
+model Booking {
+  id                  String   @id @default(cuid())
+  customerId          String
+  roomId              String
+  roomType            RoomType
+  startsAt            DateTime
+  endsAt              DateTime
+  durationHours       Float
+  priceBeforeDiscount Int
+  discountType        DiscountType?
+  discountValue       Int?
+  discountReason      String?
+  discountApprovedBy  String?
+  discountNotes       String?
+  finalPrice          Int
+  creditHoursUsed     Float    @default(0)
+  paymentStatus       PaymentStatus @default(UNPAID)
+  notes               String?
+  status              BookingStatus @default(CONFIRMED)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  room     Room     @relation(fields: [roomId], references: [id])
+  payment  Payment?
+
+  @@index([roomId, startsAt, endsAt])
+}
+
+model Payment {
+  id                    String   @id @default(cuid())
+  customerId            String?
+  membershipPurchaseId  String?  @unique
+  bookingId             String?  @unique
+  coffeeSaleId          String?  @unique
+  paymentFor            PaymentFor
+  amount                Int
+  method                PaymentMethod
+  status                PaymentStatus
+  paymentDate           DateTime @default(now())
+  receiptNumber         String?
+  receivedById          String?
+  notes                 String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  membership MembershipPurchase? @relation(fields: [membershipPurchaseId], references: [id])
+  booking    Booking? @relation(fields: [bookingId], references: [id])
+  coffeeSale CoffeeSale? @relation(fields: [coffeeSaleId], references: [id])
+  receivedBy StaffUser? @relation("PaymentReceiver", fields: [receivedById], references: [id])
+  adjustments PaymentAdjustment[]
+}
+
+model PaymentAdjustment {
+  id              String   @id @default(cuid())
+  paymentId       String
+  originalDetails String
+  updatedDetails  String
+  reason          String
+  adjustedById    String
+  adjustedAt      DateTime @default(now())
+
+  payment    Payment   @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  adjustedBy StaffUser @relation("PaymentAdjuster", fields: [adjustedById], references: [id])
+}
+
+model Setting {
+  key   String @id
+  value String
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  staffId   String?
+  message   String
+  entity    String?
+  entityId  String?
+  createdAt DateTime @default(now())
+
+  staff StaffUser? @relation(fields: [staffId], references: [id])
+}

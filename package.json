@@ -1,0 +1,31 @@
+{
+  "name": "cowork-by-ihy",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:reset": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "https://registry.npmmirror.com/@prisma/client/-/client-6.7.0.tgz",
+    "clsx": "2.1.1",
+    "date-fns": "4.1.0",
+    "lucide-react": "0.468.0",
+    "next": "https://registry.npmmirror.com/next/-/next-15.3.1.tgz",
+    "prisma": "https://registry.npmmirror.com/prisma/-/prisma-6.7.0.tgz",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "zod": "3.24.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.3",
+    "@types/react": "19.0.10",
+    "@types/react-dom": "19.0.4",
+    "tsx": "4.19.4",
+    "typescript": "5.8.3"
+  }
+}
