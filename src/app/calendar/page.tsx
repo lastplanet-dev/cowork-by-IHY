@@ -1,42 +1,231 @@
-import { endOfDay, startOfDay } from "date-fns";
+import {
+  addDays,
+  addMonths,
+  addWeeks,
+  eachDayOfInterval,
+  endOfDay,
+  endOfMonth,
+  endOfWeek,
+  format,
+  isSameDay,
+  parseISO,
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+  subMonths,
+  subWeeks
+} from "date-fns";
+import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/prisma";
-import { mmk, shortTime } from "@/lib/format";
+import { mmk, shortDate, shortTime } from "@/lib/format";
+import { getOperationalLocation } from "@/lib/session";
 
-export default async function CalendarPage() {
-  const today = new Date();
-  const bookings = await prisma.booking.findMany({
-    where: { startsAt: { gte: startOfDay(today), lte: endOfDay(today) }, status: { not: "CANCELLED" } },
-    include: { customer: true, room: true },
-    orderBy: { startsAt: "asc" }
-  });
+type CalendarView = "day" | "week" | "month";
+
+export default async function CalendarPage({
+  searchParams
+}: {
+  searchParams: Promise<{ view?: CalendarView; date?: string; roomId?: string }>;
+}) {
+  const params = await searchParams;
+  const activeLocation = await getOperationalLocation();
+  const view = params.view === "week" || params.view === "month" ? params.view : "day";
+  const selectedDate = params.date ? parseISO(params.date) : new Date();
+  const roomId = params.roomId || "";
+
+  const range =
+    view === "month"
+      ? { start: startOfMonth(selectedDate), end: endOfMonth(selectedDate) }
+      : view === "week"
+        ? { start: startOfWeek(selectedDate, { weekStartsOn: 1 }), end: endOfWeek(selectedDate, { weekStartsOn: 1 }) }
+        : { start: startOfDay(selectedDate), end: endOfDay(selectedDate) };
+
+  const [rooms, bookings] = await Promise.all([
+    prisma.room.findMany({ where: { isActive: true, locationId: activeLocation.id }, orderBy: [{ roomType: "asc" }, { name: "asc" }] }),
+    prisma.booking.findMany({
+      where: {
+        room: { locationId: activeLocation.id },
+        startsAt: { lte: range.end },
+        endsAt: { gte: range.start },
+        status: { not: "CANCELLED" },
+        ...(roomId ? { roomId } : {})
+      },
+      include: { customer: true, room: true },
+      orderBy: { startsAt: "asc" }
+    })
+  ]);
+
+  const visibleRooms = roomId ? rooms.filter((room) => room.id === roomId) : rooms;
+  const days = eachDayOfInterval(range);
   const hours = Array.from({ length: 12 }, (_, i) => i + 8);
+  const previousDate = view === "month" ? subMonths(selectedDate, 1) : view === "week" ? subWeeks(selectedDate, 1) : addDays(selectedDate, -1);
+  const nextDate = view === "month" ? addMonths(selectedDate, 1) : view === "week" ? addWeeks(selectedDate, 1) : addDays(selectedDate, 1);
+
+  const linkFor = (next: Partial<{ view: CalendarView; date: Date; roomId: string }>) => {
+    const query = new URLSearchParams({
+      view: next.view ?? view,
+      date: format(next.date ?? selectedDate, "yyyy-MM-dd")
+    });
+    const selectedRoom = next.roomId ?? roomId;
+    if (selectedRoom) query.set("roomId", selectedRoom);
+    return `/calendar?${query.toString()}`;
+  };
 
   return (
     <>
-      <PageHeader title="Calendar" subtitle="Day view for real-time room availability and booking conflicts." />
+      <PageHeader
+        title="Calendar"
+        subtitle="Check room availability by day, week, or month before confirming an enquiry."
+        action={<Link className="btn" href="/bookings">Create booking</Link>}
+      />
       <div className="content">
         <section className="panel">
-          <div className="section-head"><h2>Today</h2><span className="status ok">{bookings.length} bookings</span></div>
-          <div className="calendar">
-            {hours.map((hour) => {
-              const items = bookings.filter((b) => new Date(b.startsAt).getHours() === hour);
-              return (
-                <div key={hour} style={{ display: "contents" }}>
-                  <strong>{hour}:00</strong>
-                  <div className="slot">
-                    {items.map((b) => (
-                      <div className="card" key={b.id} style={{ marginBottom: 8 }}>
-                        <strong>{b.room.name}</strong> · {b.customer.fullName} · {shortTime(b.startsAt)}-{shortTime(b.endsAt)} · {mmk(b.finalPrice)}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
+          <div className="section-head">
+            <div>
+              <h2>{calendarTitle(view, range.start, range.end)}</h2>
+              <p className="muted">{bookings.length} active bookings in this view</p>
+            </div>
+            <div className="actions">
+              <Link className="btn secondary" href={linkFor({ date: previousDate })}>Previous</Link>
+              <Link className="btn secondary" href={linkFor({ date: new Date() })}>Today</Link>
+              <Link className="btn secondary" href={linkFor({ date: nextDate })}>Next</Link>
+            </div>
           </div>
+
+          <form className="calendar-controls">
+            <div className="calendar-tabs" role="tablist" aria-label="Calendar view">
+              <Link className={view === "day" ? "active" : ""} href={linkFor({ view: "day" })}>Day</Link>
+              <Link className={view === "week" ? "active" : ""} href={linkFor({ view: "week" })}>Week</Link>
+              <Link className={view === "month" ? "active" : ""} href={linkFor({ view: "month" })}>Month</Link>
+            </div>
+            <input type="hidden" name="view" value={view} />
+            <div className="field">
+              <label>Date</label>
+              <input name="date" type="date" defaultValue={format(selectedDate, "yyyy-MM-dd")} />
+            </div>
+            <div className="field">
+              <label>Room</label>
+              <select name="roomId" defaultValue={roomId}>
+                <option value="">All rooms</option>
+                {rooms.map((room) => (
+                  <option key={room.id} value={room.id}>
+                    {room.name} · {room.roomType.replaceAll("_", " ")}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button className="btn secondary">Apply</button>
+          </form>
+        </section>
+
+        {view === "month" ? (
+          <MonthView days={days} bookings={bookings} />
+        ) : (
+          <AvailabilityGrid days={days} hours={hours} rooms={visibleRooms} bookings={bookings} />
+        )}
+
+        <section className="panel">
+          <div className="section-head"><h2>Bookings In View</h2><span className="status">{bookings.length} records</span></div>
+          <table>
+            <thead><tr><th>Date</th><th>Time</th><th>Room</th><th>Customer</th><th>Status</th><th>Price</th></tr></thead>
+            <tbody>
+              {bookings.map((booking) => (
+                <tr key={booking.id}>
+                  <td>{shortDate(booking.startsAt)}</td>
+                  <td>{shortTime(booking.startsAt)}-{shortTime(booking.endsAt)}</td>
+                  <td>{booking.room.name}<br /><span className="muted">{booking.room.roomType.replaceAll("_", " ")}</span></td>
+                  <td>{booking.customer.fullName}</td>
+                  <td><span className={booking.status === "CONFIRMED" ? "status ok" : "status warn"}>{booking.status}</span></td>
+                  <td>{mmk(booking.finalPrice)}</td>
+                </tr>
+              ))}
+              {!bookings.length && <tr><td colSpan={6} className="muted">No bookings in this period. Rooms are free.</td></tr>}
+            </tbody>
+          </table>
         </section>
       </div>
     </>
   );
+}
+
+function AvailabilityGrid({ days, hours, rooms, bookings }: { days: Date[]; hours: number[]; rooms: any[]; bookings: any[] }) {
+  const columns = days.flatMap((day) => rooms.map((room) => ({ day, room })));
+  return (
+    <section className="panel availability-wrap">
+      <div className="section-head">
+        <h2>Availability</h2>
+        <div className="actions">
+          <span className="status ok">Free</span>
+          <span className="status bad">Booked</span>
+        </div>
+      </div>
+      <div className="availability-grid room-column-grid" style={{ gridTemplateColumns: `96px repeat(${Math.max(columns.length, 1)}, minmax(180px, 1fr))` }}>
+        <div className="calendar-cell header">Time</div>
+        {columns.map(({ day, room }) => <div className="calendar-cell header" key={`${day.toISOString()}-${room.id}`}><strong>{room.name}</strong><br /><span className="muted">{format(day, "EEE, MMM d")} · {room.roomType}</span></div>)}
+        {hours.map((hour) => (
+          <div key={hour} style={{ display: "contents" }}>
+            <div className="calendar-cell time">{format(new Date(2026, 0, 1, hour), "h a")}</div>
+            {columns.map(({ day, room }) => {
+              const booked = bookings.find((booking) => overlapsHour(booking, day, hour) && booking.roomId === room.id);
+              return (
+                <div className="calendar-cell" key={`${day.toISOString()}-${room.id}-${hour}`}>
+                  <div className={booked ? "availability-item booked" : "availability-item free"}>
+                    {booked ? (
+                      <><strong>{booked.customer.fullName}</strong><span>{shortTime(booked.startsAt)}-{shortTime(booked.endsAt)}</span></>
+                    ) : (
+                      <><strong>Free</strong><span>Available</span></>
+                    )}
+                  </div>
+              </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MonthView({ days, bookings }: { days: Date[]; bookings: any[] }) {
+  return (
+    <section className="panel">
+      <div className="section-head"><h2>Month Overview</h2><span className="status">{bookings.length} bookings</span></div>
+      <div className="month-grid">
+        {days.map((day) => {
+          const dayBookings = bookings.filter((booking) => isSameDay(new Date(booking.startsAt), day));
+          return (
+            <div className="month-day" key={day.toISOString()}>
+              <strong>{format(day, "d")}</strong>
+              <span className="muted">{format(day, "EEE")}</span>
+              {dayBookings.length ? (
+                dayBookings.slice(0, 4).map((booking) => (
+                  <div className="month-booking" key={booking.id}>
+                    {shortTime(booking.startsAt)} {booking.room.name}
+                  </div>
+                ))
+              ) : (
+                <div className="month-free">No bookings</div>
+              )}
+              {dayBookings.length > 4 && <div className="month-more">+{dayBookings.length - 4} more</div>}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function overlapsHour(booking: any, day: Date, hour: number) {
+  const slotStart = new Date(day);
+  slotStart.setHours(hour, 0, 0, 0);
+  const slotEnd = new Date(day);
+  slotEnd.setHours(hour + 1, 0, 0, 0);
+  return new Date(booking.startsAt) < slotEnd && new Date(booking.endsAt) > slotStart;
+}
+
+function calendarTitle(view: CalendarView, start: Date, end: Date) {
+  if (view === "month") return format(start, "MMMM yyyy");
+  if (view === "week") return `${format(start, "MMM d")} - ${format(end, "MMM d, yyyy")}`;
+  return format(start, "EEEE, MMMM d, yyyy");
 }

@@ -2,25 +2,28 @@ import { startOfMonth, startOfToday } from "date-fns";
 import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/prisma";
 import { mmk } from "@/lib/format";
+import { getOperationalLocation } from "@/lib/session";
 
 export default async function ReportsPage() {
+  const activeLocation = await getOperationalLocation();
+  const locationPaymentWhere = paymentLocationWhere(activeLocation.id);
   const [daily, monthly, passSales, roomRevenue, coffeeRevenue, discounts, expired, utilization, creditUse, visits] = await Promise.all([
-    prisma.payment.aggregate({ where: { paymentDate: { gte: startOfToday() }, status: { in: ["PAID", "PARTIALLY_PAID"] } }, _sum: { amount: true } }),
-    prisma.payment.aggregate({ where: { paymentDate: { gte: startOfMonth(new Date()) }, status: { in: ["PAID", "PARTIALLY_PAID"] } }, _sum: { amount: true } }),
-    prisma.payment.aggregate({ where: { paymentFor: "PASS", status: { in: ["PAID", "PARTIALLY_PAID"] } }, _sum: { amount: true }, _count: true }),
-    prisma.payment.aggregate({ where: { paymentFor: "BOOKING", status: { in: ["PAID", "PARTIALLY_PAID"] } }, _sum: { amount: true }, _count: true }),
-    prisma.payment.aggregate({ where: { paymentFor: { in: ["COFFEE", "UPGRADE"] }, status: { in: ["PAID", "PARTIALLY_PAID"] } }, _sum: { amount: true }, _count: true }),
-    prisma.membershipPurchase.findMany({ where: { discountValue: { gt: 0 } }, take: 20, include: { customer: true } }),
-    prisma.customer.findMany({ where: { membershipExpiresAt: { lt: new Date() } }, take: 20 }),
-    prisma.booking.groupBy({ by: ["roomType"], _sum: { durationHours: true }, _count: true }),
-    prisma.booking.aggregate({ _sum: { creditHoursUsed: true } }),
-    prisma.checkIn.groupBy({ by: ["customerId"], _count: true, orderBy: { _count: { customerId: "desc" } }, take: 10 })
+    prisma.payment.aggregate({ where: { AND: [{ paymentDate: { gte: startOfToday() }, status: { in: ["PAID", "PARTIALLY_PAID"] } }, locationPaymentWhere] }, _sum: { amount: true } }),
+    prisma.payment.aggregate({ where: { AND: [{ paymentDate: { gte: startOfMonth(new Date()) }, status: { in: ["PAID", "PARTIALLY_PAID"] } }, locationPaymentWhere] }, _sum: { amount: true } }),
+    prisma.payment.aggregate({ where: { AND: [{ paymentFor: "PASS", status: { in: ["PAID", "PARTIALLY_PAID"] } }, locationPaymentWhere] }, _sum: { amount: true }, _count: true }),
+    prisma.payment.aggregate({ where: { AND: [{ paymentFor: "BOOKING", status: { in: ["PAID", "PARTIALLY_PAID"] } }, locationPaymentWhere] }, _sum: { amount: true }, _count: true }),
+    prisma.payment.aggregate({ where: { AND: [{ paymentFor: { in: ["COFFEE", "UPGRADE"] }, status: { in: ["PAID", "PARTIALLY_PAID"] } }, locationPaymentWhere] }, _sum: { amount: true }, _count: true }),
+    prisma.membershipPurchase.findMany({ where: { discountValue: { gt: 0 }, customer: { locationId: activeLocation.id } }, take: 20, include: { customer: true } }),
+    prisma.customer.findMany({ where: { locationId: activeLocation.id, membershipExpiresAt: { lt: new Date() } }, take: 20 }),
+    prisma.booking.groupBy({ by: ["roomType"], where: { room: { locationId: activeLocation.id } }, _sum: { durationHours: true }, _count: true }),
+    prisma.booking.aggregate({ where: { room: { locationId: activeLocation.id } }, _sum: { creditHoursUsed: true } }),
+    prisma.checkIn.groupBy({ by: ["customerId"], where: { customer: { locationId: activeLocation.id } }, _count: true, orderBy: { _count: { customerId: "desc" } }, take: 10 })
   ]);
   const visitCustomers = await prisma.customer.findMany({ where: { id: { in: visits.map((v) => v.customerId) } } });
 
   return (
     <>
-      <PageHeader title="Reports" subtitle="Simple operating reports for sales, usage, discounts, renewals, and visits." />
+      <PageHeader title="Reports" subtitle={`${activeLocation.name}: simple operating reports for sales, usage, discounts, renewals, and visits.`} />
       <div className="content">
         <div className="grid cols-4">
           <div className="card metric"><span>Daily sales</span><strong>{mmk(daily._sum.amount)}</strong></div>
@@ -39,6 +42,18 @@ export default async function ReportsPage() {
       </div>
     </>
   );
+}
+
+function paymentLocationWhere(locationId: string) {
+  return {
+    OR: [
+      { customer: { locationId } },
+      { membership: { customer: { locationId } } },
+      { booking: { room: { locationId } } },
+      { coffeeSale: { coffeeItem: { locationId } } },
+      { receivedBy: { locationId } }
+    ]
+  };
 }
 
 function Report({ title, rows }: { title: string; rows: string[][] }) {

@@ -1,27 +1,31 @@
 import Link from "next/link";
-import { CalendarDays, Coffee, CreditCard, Gauge, KeyRound, LayoutGrid, Settings, Users, UserCog, DoorOpen, BadgeDollarSign } from "lucide-react";
+import { cookies, headers } from "next/headers";
+import { CalendarDays, CreditCard, Gauge, KeyRound, Settings, Users, DoorOpen, UserCircle } from "lucide-react";
 
 const nav = [
   ["/dashboard", "Dashboard", Gauge],
   ["/customers", "Customers", Users],
   ["/check-in", "Check-in", KeyRound],
-  ["/passes", "Passes", BadgeDollarSign],
   ["/bookings", "Bookings", DoorOpen],
   ["/calendar", "Calendar", CalendarDays],
-  ["/rooms", "Rooms", LayoutGrid],
-  ["/coffee", "Coffee", Coffee],
   ["/payments", "Payments", CreditCard],
   ["/reports", "Reports", Gauge],
   ["/settings", "Settings", Settings],
-  ["/staff", "Staff", UserCog]
+  ["/profile", "Profile", UserCircle]
 ] as const;
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export async function AppShell({ children }: { children: React.ReactNode }) {
+  const [cookieStore, headerStore] = await Promise.all([cookies(), headers()]);
+  const pathname = headerStore.get("x-cowork-pathname") ?? "";
+  const isLoggedIn = Boolean(cookieStore.get("coworkStaffId")?.value);
+  const isAuthPage = pathname === "/" || pathname.startsWith("/login");
+  if (!isLoggedIn || isAuthPage) return <main className="auth-main">{children}</main>;
+
   return (
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">IHY</div>
+          <img src="/brand/impact-hub-yangon-white.png" alt="Impact Hub Yangon" className="brand-logo" />
           <div>
             <strong>Cowork by IHY</strong>
             <span>Operations console</span>

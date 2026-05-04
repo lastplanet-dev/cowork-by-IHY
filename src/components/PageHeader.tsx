@@ -1,3 +1,5 @@
+import { BackButton } from "@/components/BackButton";
+
 export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: React.ReactNode }) {
   return (
     <div className="topbar">
@@ -5,7 +7,10 @@ export function PageHeader({ title, subtitle, action }: { title: string; subtitl
         <h1>{title}</h1>
         {subtitle ? <p>{subtitle}</p> : null}
       </div>
-      {action}
+      <div className="actions">
+        <BackButton />
+        {action}
+      </div>
     </div>
   );
 }

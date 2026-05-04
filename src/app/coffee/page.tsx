@@ -1,52 +1,43 @@
 import { DeleteButton } from "@/components/DeleteButton";
+import { CloseDetailsButton } from "@/components/CloseDetailsButton";
 import { PageHeader } from "@/components/PageHeader";
-import { deleteCoffeeItem, recordCoffeeSale, upsertCoffeeItem } from "@/lib/actions";
+import { deleteCoffeeItem, upsertCoffeeItem } from "@/lib/actions";
 import { prisma } from "@/lib/prisma";
-import { mmk, shortDate } from "@/lib/format";
+import { mmk } from "@/lib/format";
+import { getOperationalLocation } from "@/lib/session";
 
 export default async function CoffeePage() {
-  const [items, customers, sales] = await Promise.all([
-    prisma.coffeeItem.findMany({ orderBy: { name: "asc" } }),
-    prisma.customer.findMany({ orderBy: { fullName: "asc" } }),
-    prisma.coffeeSale.findMany({ include: { customer: true, coffeeItem: true }, orderBy: { soldAt: "desc" }, take: 20 })
-  ]);
+  const activeLocation = await getOperationalLocation();
+  const items = await prisma.coffeeItem.findMany({ where: { locationId: activeLocation.id }, orderBy: { name: "asc" } });
   return (
     <>
-      <PageHeader title="Coffee / POS" subtitle="Manage free entitlements, paid menu items, and milk-based upgrades." />
+      <PageHeader title="Coffee Menu" subtitle="Configure free entitlements, paid menu items, and milk-based upgrades." />
       <div className="content">
-        <div className="grid cols-2">
-          <section className="panel">
-            <div className="section-head"><h2>Record Sale</h2></div>
-            <form action={recordCoffeeSale} className="form-grid">
-              <div className="field"><label>Item</label><select name="coffeeItemId">{items.filter((i) => i.isActive).map((i) => <option key={i.id} value={i.id}>{i.name} · {mmk(i.price)}</option>)}</select></div>
-              <div className="field"><label>Customer</label><select name="customerId"><option value="">Walk-in</option>{customers.map((c) => <option key={c.id} value={c.id}>{c.fullName}</option>)}</select></div>
-              <div className="field"><label>Quantity</label><input name="quantity" type="number" min="1" defaultValue="1" /></div>
-              <div className="field"><label>Discount type</label><select name="discountType" defaultValue=""><option value="">No discount</option><option value="PERCENTAGE">Percentage</option><option value="FIXED_AMOUNT">Fixed amount</option></select></div>
-              <div className="field"><label>Discount value</label><input name="discountValue" type="number" min="0" defaultValue="0" /></div>
-              <div className="field"><label>Payment method</label><select name="paymentMethod" defaultValue="CASH"><option value="CASH">Cash</option><option value="KBZPAY">KBZPay</option><option value="WAVEPAY">WavePay</option><option value="BANK_TRANSFER">Bank transfer</option><option value="CARD">Card</option><option value="OTHER">Other</option></select></div>
-              <div className="actions"><button className="btn">Record sale</button></div>
-            </form>
-          </section>
-          <section className="panel">
-            <div className="section-head"><h2>Add Menu Item</h2></div>
-            <form action={upsertCoffeeItem} className="form-grid">
-              <div className="field"><label>Name</label><input name="name" required /></div>
-              <div className="field"><label>Price</label><input name="price" type="number" min="0" defaultValue="0" /></div>
-              <div className="field"><label>Kind</label><select name="kind"><option value="FREE_ENTITLEMENT">Free entitlement</option><option value="UPGRADE">Upgrade</option><option value="PAID_ITEM">Paid item</option></select></div>
-              <label className="field"><span>Active</span><input name="isActive" type="checkbox" defaultChecked /></label>
-              <div className="actions"><button className="btn">Save item</button></div>
-            </form>
-          </section>
-        </div>
+        <details className="panel add-panel">
+          <summary className="section-head"><h2>Coffee Menu</h2><span className="btn">Add menu item</span></summary>
+          <div className="floating-close"><CloseDetailsButton /></div>
+          <CoffeeItemForm locationId={activeLocation.id} />
+        </details>
         <section className="panel">
           <div className="section-head"><h2>Coffee Menu</h2></div>
-          <table><tbody>{items.map((item) => <tr key={item.id}><td>{item.name}</td><td>{item.kind.replaceAll("_", " ")}</td><td>{mmk(item.price)}</td><td><span className={item.isActive ? "status ok" : "status"}>{item.isActive ? "Active" : "Inactive"}</span></td><td><DeleteButton label={item.name} action={deleteCoffeeItem.bind(null, item.id)} /></td></tr>)}</tbody></table>
-        </section>
-        <section className="panel">
-          <div className="section-head"><h2>Recent Coffee Sales</h2></div>
-          <table><thead><tr><th>Date</th><th>Customer</th><th>Item</th><th>Qty</th><th>Total</th></tr></thead><tbody>{sales.map((sale) => <tr key={sale.id}><td>{shortDate(sale.soldAt)}</td><td>{sale.customer?.fullName ?? "Walk-in"}</td><td>{sale.coffeeItem.name}</td><td>{sale.quantity}</td><td>{mmk(sale.finalAmount)}</td></tr>)}</tbody></table>
+          <table><tbody>{items.map((item) => <tr key={item.id}><td>{item.name}</td><td>{item.kind.replaceAll("_", " ")}</td><td>{mmk(item.price)}</td><td><span className={item.isActive ? "status ok" : "status"}>{item.isActive ? "Active" : "Inactive"}</span></td><td><div className="actions"><details><summary className="btn secondary">Edit</summary><div className="edit-popover"><div className="floating-close"><CloseDetailsButton /></div><CoffeeItemForm item={item} locationId={activeLocation.id} /></div></details><DeleteButton label={item.name} action={deleteCoffeeItem.bind(null, item.id)} /></div></td></tr>)}</tbody></table>
         </section>
       </div>
     </>
+  );
+}
+
+function CoffeeItemForm({ item, locationId }: { item?: any; locationId?: string }) {
+  return (
+    <form action={upsertCoffeeItem} className="form-grid">
+      {item ? <input type="hidden" name="id" value={item.id} /> : null}
+      {locationId ? <input type="hidden" name="locationId" value={locationId} /> : null}
+      <input type="hidden" name="redirectTo" value="/coffee" />
+      <div className="field"><label>Name</label><input name="name" defaultValue={item?.name ?? ""} required /></div>
+      <div className="field"><label>Price</label><input name="price" type="number" min="0" defaultValue={item?.price ?? 0} /></div>
+      <div className="field"><label>Kind</label><select name="kind" defaultValue={item?.kind ?? "PAID_ITEM"}><option value="FREE_ENTITLEMENT">Free entitlement</option><option value="UPGRADE">Upgrade</option><option value="PAID_ITEM">Paid item</option></select></div>
+      <label className="field"><span>Active</span><input name="isActive" type="checkbox" defaultChecked={item?.isActive ?? true} /></label>
+      <div className="actions"><button className="btn">Save item</button></div>
+    </form>
   );
 }

@@ -1,22 +1,26 @@
 import { addHours, setHours, setMinutes } from "date-fns";
 import { PageHeader } from "@/components/PageHeader";
-import { cancelBooking, createBooking } from "@/lib/actions";
+import { CloseDetailsButton } from "@/components/CloseDetailsButton";
+import { cancelBooking, createBooking, updateBooking } from "@/lib/actions";
 import { prisma } from "@/lib/prisma";
 import { dateTimeLocal, mmk, shortDate, shortTime } from "@/lib/format";
+import { getOperationalLocation } from "@/lib/session";
 
 export default async function BookingsPage({ searchParams }: { searchParams: Promise<{ q?: string; status?: string }> }) {
   const params = await searchParams;
+  const activeLocation = await getOperationalLocation();
   const [customers, rooms, bookings] = await Promise.all([
-    prisma.customer.findMany({ orderBy: { fullName: "asc" } }),
-    prisma.room.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+    prisma.customer.findMany({ where: { locationId: activeLocation.id }, orderBy: { fullName: "asc" } }),
+    prisma.room.findMany({ where: { isActive: true, locationId: activeLocation.id }, orderBy: { name: "asc" } }),
     prisma.booking.findMany({
       where: {
         AND: [
+          { room: { locationId: activeLocation.id } },
           params.status ? { status: params.status as any } : {},
           params.q ? { OR: [{ customer: { fullName: { contains: params.q } } }, { room: { name: { contains: params.q } } }] } : {}
         ]
       },
-      include: { customer: true, room: true },
+      include: { customer: true, room: true, payment: true },
       orderBy: { startsAt: "desc" },
       take: 80
     })
@@ -27,8 +31,9 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
     <>
       <PageHeader title="Bookings" subtitle="Create, filter, cancel, and track paid or credit-backed room bookings." />
       <div className="content">
-        <section className="panel">
-          <div className="section-head"><h2>Create Booking</h2></div>
+        <details className="panel add-panel">
+          <summary className="section-head"><h2>Bookings</h2><span className="btn">Add booking</span></summary>
+          <div className="floating-close"><CloseDetailsButton /></div>
           <form action={createBooking} className="form-grid">
             <div className="field"><label>Customer/member</label><select name="customerId" required>{customers.map((c) => <option key={c.id} value={c.id}>{c.fullName} · {c.remainingCoworkingDays} days · {c.remainingMeetingCreditHours} credit hr</option>)}</select></div>
             <div className="field"><label>Room</label><select name="roomId" required>{rooms.map((r) => <option key={r.id} value={r.id}>{r.name} · {r.roomType.replaceAll("_", " ")} · {mmk(r.hourlyRate)}/hr</option>)}</select></div>
@@ -43,7 +48,7 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
             <div className="field full"><label>Notes</label><textarea name="notes" /></div>
             <div className="actions"><button className="btn">Create booking</button></div>
           </form>
-        </section>
+        </details>
 
         <section className="panel">
           <div className="section-head">
@@ -52,7 +57,44 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
           </div>
           <table>
             <thead><tr><th>Customer</th><th>Room</th><th>Time</th><th>Credit</th><th>Price</th><th>Payment</th><th>Status</th><th></th></tr></thead>
-            <tbody>{bookings.map((b) => <tr key={b.id}><td>{b.customer.fullName}</td><td>{b.room.name}<br /><span className="muted">{b.roomType.replaceAll("_", " ")}</span></td><td>{shortDate(b.startsAt)}<br />{shortTime(b.startsAt)}-{shortTime(b.endsAt)}</td><td>{b.creditHoursUsed} hr</td><td>{mmk(b.finalPrice)}</td><td><span className="status">{b.paymentStatus}</span></td><td><span className={b.status === "CANCELLED" ? "status bad" : "status ok"}>{b.status}</span></td><td>{b.status !== "CANCELLED" ? <form action={cancelBooking.bind(null, b.id)}><button className="btn secondary">Cancel</button></form> : null}</td></tr>)}</tbody>
+            <tbody>
+              {bookings.map((b) => (
+                <tr key={b.id}>
+                  <td>{b.customer.fullName}</td>
+                  <td>{b.room.name}<br /><span className="muted">{b.roomType.replaceAll("_", " ")}</span></td>
+                  <td>{shortDate(b.startsAt)}<br />{shortTime(b.startsAt)}-{shortTime(b.endsAt)}</td>
+                  <td>{b.creditHoursUsed} hr</td>
+                  <td>{mmk(b.finalPrice)}</td>
+                  <td><span className="status">{b.paymentStatus}</span></td>
+                  <td><span className={b.status === "CANCELLED" ? "status bad" : "status ok"}>{b.status}</span></td>
+                  <td>
+                    <div className="actions">
+                      <details>
+                        <summary className="btn secondary">Edit</summary>
+                        <form action={updateBooking.bind(null, b.id)} className="edit-popover form-grid">
+                          <div className="floating-close"><CloseDetailsButton /></div>
+                          <div className="field"><label>Customer/member</label><select name="customerId" defaultValue={b.customerId} required>{customers.map((c) => <option key={c.id} value={c.id}>{c.fullName} · {c.remainingCoworkingDays} days · {c.remainingMeetingCreditHours} credit hr</option>)}</select></div>
+                          <div className="field"><label>Room</label><select name="roomId" defaultValue={b.roomId} required>{rooms.map((r) => <option key={r.id} value={r.id}>{r.name} · {r.roomType.replaceAll("_", " ")} · {mmk(r.hourlyRate)}/hr</option>)}</select></div>
+                          <div className="field"><label>Start date/time</label><input name="startsAt" type="datetime-local" defaultValue={dateTimeLocal(b.startsAt)} required /></div>
+                          <div className="field"><label>End date/time</label><input name="endsAt" type="datetime-local" defaultValue={dateTimeLocal(b.endsAt)} required /></div>
+                          <div className="field"><label>Status</label><select name="status" defaultValue={b.status}><option value="PENDING">Pending</option><option value="CONFIRMED">Confirmed</option><option value="COMPLETED">Completed</option><option value="CANCELLED">Cancelled</option></select></div>
+                          <div className="field"><label>Payment status</label><select name="paymentStatus" defaultValue={b.paymentStatus}><option value="UNPAID">Unpaid</option><option value="PAID">Paid</option><option value="PARTIALLY_PAID">Partially paid</option><option value="WAIVED">Waived</option></select></div>
+                          <div className="field"><label>Payment method</label><select name="paymentMethod" defaultValue={b.payment?.method ?? "CASH"}><option value="CASH">Cash</option><option value="KBZPAY">KBZPay</option><option value="WAVEPAY">WavePay</option><option value="BANK_TRANSFER">Bank transfer</option><option value="CARD">Card</option><option value="OTHER">Other</option></select></div>
+                          <div className="field"><label>Receipt/reference</label><input name="receiptNumber" defaultValue={b.payment?.receiptNumber ?? ""} /></div>
+                          <div className="field"><label>Discount type</label><select name="discountType" defaultValue={b.discountType ?? ""}><option value="">No discount</option><option value="PERCENTAGE">Percentage</option><option value="FIXED_AMOUNT">Fixed amount</option></select></div>
+                          <div className="field"><label>Discount value</label><input name="discountValue" type="number" min="0" defaultValue={b.discountValue ?? 0} /></div>
+                          <div className="field"><label>Discount reason</label><input name="discountReason" defaultValue={b.discountReason ?? ""} /></div>
+                          <div className="field"><label>Approved by</label><input name="discountApprovedBy" defaultValue={b.discountApprovedBy ?? ""} /></div>
+                          <div className="field full"><label>Notes</label><textarea name="notes" defaultValue={b.notes ?? ""} /></div>
+                          <div className="actions"><button className="btn">Save booking</button></div>
+                        </form>
+                      </details>
+                      {b.status !== "CANCELLED" ? <form action={cancelBooking.bind(null, b.id)}><button className="btn secondary">Cancel</button></form> : null}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
           </table>
         </section>
       </div>

@@ -40,13 +40,6 @@ declare module "@prisma/client" {
     FIXED_AMOUNT = "FIXED_AMOUNT"
   }
 
-  export enum RoomType {
-    MEETING_ROOM = "MEETING_ROOM",
-    TRAINING_ROOM = "TRAINING_ROOM",
-    FOCUS_ROOM = "FOCUS_ROOM",
-    PHONE_BOOTH = "PHONE_BOOTH"
-  }
-
   export enum BookingStatus {
     PENDING = "PENDING",
     CONFIRMED = "CONFIRMED",

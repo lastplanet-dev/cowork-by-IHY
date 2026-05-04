@@ -41,13 +41,6 @@ enum DiscountType {
   FIXED_AMOUNT
 }
 
-enum RoomType {
-  MEETING_ROOM
-  TRAINING_ROOM
-  FOCUS_ROOM
-  PHONE_BOOTH
-}
-
 enum BookingStatus {
   PENDING
   CONFIRMED
@@ -71,21 +64,45 @@ enum PaymentFor {
 
 model StaffUser {
   id           String   @id @default(cuid())
+  locationId   String?
   name         String
   email        String   @unique
+  passwordHash String?
+  resetToken   String?
+  resetRequestedAt DateTime?
   role         Role     @default(ADMIN)
   isActive     Boolean  @default(true)
   canSettings  Boolean  @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  location     Location? @relation(fields: [locationId], references: [id])
   payments     Payment[] @relation("PaymentReceiver")
   adjustments  PaymentAdjustment[] @relation("PaymentAdjuster")
   activities   ActivityLog[]
 }
 
+model Location {
+  id        String   @id @default(cuid())
+  name      String
+  address   String?
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  staff      StaffUser[]
+  customers  Customer[]
+  passTypes  PassType[]
+  coffeeItems CoffeeItem[]
+  rooms      Room[]
+  roomTypes  RoomTypeSetting[]
+}
+
 model Customer {
   id                         String   @id @default(cuid())
+  customerCode               String?  @unique
+  locationId                 String?
   fullName                   String
   phone                      String
   email                      String?
@@ -100,6 +117,7 @@ model Customer {
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
 
+  location    Location? @relation(fields: [locationId], references: [id])
   memberships MembershipPurchase[]
   payments    Payment[]
   bookings    Booking[]
@@ -109,7 +127,8 @@ model Customer {
 
 model PassType {
   id                         String   @id @default(cuid())
-  name                       String   @unique
+  locationId                 String?
+  name                       String
   price                      Int
   coworkingDays              Int
   validityDays               Int
@@ -119,7 +138,10 @@ model PassType {
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
 
+  location  Location? @relation(fields: [locationId], references: [id])
   purchases MembershipPurchase[]
+
+  @@unique([locationId, name])
 }
 
 model MembershipPurchase {
@@ -163,14 +185,18 @@ model CheckIn {
 
 model CoffeeItem {
   id        String     @id @default(cuid())
-  name      String     @unique
+  locationId String?
+  name      String
   price     Int
   kind      CoffeeKind @default(PAID_ITEM)
   isActive  Boolean    @default(true)
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
+  location Location? @relation(fields: [locationId], references: [id])
   sales CoffeeSale[]
+
+  @@unique([locationId, name])
 }
 
 model CoffeeSale {
@@ -194,8 +220,9 @@ model CoffeeSale {
 
 model Room {
   id                     String   @id @default(cuid())
+  locationId             String?
   name                   String
-  roomType               RoomType
+  roomType               String
   capacity               Int
   hourlyRate             Int
   halfDayRate            Int?
@@ -207,14 +234,29 @@ model Room {
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
+  location Location? @relation(fields: [locationId], references: [id])
   bookings Booking[]
+}
+
+model RoomTypeSetting {
+  id          String   @id @default(cuid())
+  locationId  String?
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  location Location? @relation(fields: [locationId], references: [id])
+
+  @@unique([locationId, name])
 }
 
 model Booking {
   id                  String   @id @default(cuid())
   customerId          String
   roomId              String
-  roomType            RoomType
+  roomType            String
   startsAt            DateTime
   endsAt              DateTime
   durationHours       Float

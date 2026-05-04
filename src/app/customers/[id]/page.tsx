@@ -1,11 +1,14 @@
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
+import { CloseDetailsButton } from "@/components/CloseDetailsButton";
 import { sellPass, updateCustomer } from "@/lib/actions";
 import { prisma } from "@/lib/prisma";
 import { mmk, shortDate, shortTime } from "@/lib/format";
+import { getOperationalLocation } from "@/lib/session";
 
 export default async function CustomerProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const activeLocation = await getOperationalLocation();
   const [customer, passTypes] = await Promise.all([
     prisma.customer.findUnique({
       where: { id },
@@ -17,25 +20,29 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
         coffeeSales: { orderBy: { soldAt: "desc" }, include: { coffeeItem: true }, take: 10 }
       }
     }),
-    prisma.passType.findMany({ where: { isActive: true }, orderBy: { price: "asc" } })
+    prisma.passType.findMany({ where: { isActive: true, locationId: activeLocation.id }, orderBy: { price: "asc" } })
   ]);
 
-  if (!customer) notFound();
+  if (!customer || customer.locationId !== activeLocation.id) notFound();
+  const isExpired = !customer.membershipExpiresAt || customer.membershipExpiresAt < new Date() || customer.remainingCoworkingDays <= 0;
 
   return (
     <>
       <PageHeader title={customer.fullName} subtitle={`${customer.phone}${customer.organization ? ` · ${customer.organization}` : ""}`} />
       <div className="content">
         <div className="grid cols-4">
-          <div className="card metric"><span>Active package</span><strong>{customer.activePassName ?? "None"}</strong></div>
+          <div className="card metric"><span>Membership status</span><strong>{isExpired ? "Expired" : "Active"}</strong></div>
+          <div className="card metric"><span>Customer ID</span><strong>{customer.customerCode ?? "Pending"}</strong></div>
+          <div className="card metric"><span>Current package</span><strong>{customer.activePassName ?? "None"}</strong></div>
           <div className="card metric"><span>Coworking days</span><strong>{customer.remainingCoworkingDays}</strong></div>
           <div className="card metric"><span>Meeting credits</span><strong>{customer.remainingMeetingCreditHours} hr</strong></div>
           <div className="card metric"><span>Expiry</span><strong>{shortDate(customer.membershipExpiresAt)}</strong></div>
         </div>
 
         <div className="grid cols-2">
-          <section className="panel">
-            <div className="section-head"><h2>Edit Profile</h2></div>
+          <details className="panel add-panel">
+            <summary className="section-head"><h2>Profile Details</h2><span className="btn secondary">Edit profile</span></summary>
+            <div className="floating-close"><CloseDetailsButton /></div>
             <form action={updateCustomer.bind(null, customer.id)} className="form-grid">
               <div className="field"><label>Full name</label><input name="fullName" defaultValue={customer.fullName} required /></div>
               <div className="field"><label>Phone</label><input name="phone" defaultValue={customer.phone} required /></div>
@@ -45,10 +52,17 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
               <div className="field full"><label>Notes</label><textarea name="notes" defaultValue={customer.notes ?? ""} /></div>
               <div className="actions"><button className="btn">Save profile</button></div>
             </form>
-          </section>
+          </details>
 
-          <section className="panel">
-            <div className="section-head"><h2>Renew Membership</h2></div>
+          <details className="panel add-panel">
+            <summary className="section-head">
+              <div>
+                <h2>Renew Membership</h2>
+                <p className="muted">Expired passes start fresh. Active passes extend and add to the current balance.</p>
+              </div>
+              <span className="btn">Renew membership</span>
+            </summary>
+            <div className="floating-close"><CloseDetailsButton /></div>
             <form action={sellPass.bind(null, customer.id)} className="form-grid">
               <div className="field full"><label>Package</label><select name="passTypeId" required>{passTypes.map((pass) => <option key={pass.id} value={pass.id}>{pass.name} · {mmk(pass.price)} · {pass.coworkingDays} days · {pass.meetingCreditHours} credit hr</option>)}</select></div>
               <div className="field"><label>Discount type</label><select name="discountType" defaultValue=""><option value="">No discount</option><option value="PERCENTAGE">Percentage</option><option value="FIXED_AMOUNT">Fixed amount</option></select></div>
@@ -60,7 +74,7 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
               <div className="field full"><label>Receipt/reference</label><input name="receiptNumber" /></div>
               <div className="actions"><button className="btn">Confirm renewal</button></div>
             </form>
-          </section>
+          </details>
         </div>
 
         <div className="grid cols-2">
