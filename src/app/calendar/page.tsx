@@ -7,8 +7,6 @@ import {
   endOfMonth,
   endOfWeek,
   format,
-  isSameDay,
-  parseISO,
   startOfDay,
   startOfMonth,
   startOfWeek,
@@ -20,6 +18,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { prisma } from "@/lib/prisma";
 import { mmk, shortDate, shortTime } from "@/lib/format";
 import { getOperationalLocation } from "@/lib/session";
+import { dateInputYangon, parseYangonDateTimeToUtc, parseYangonDateToUtc, todayYangonDateInput } from "@/lib/yangon-time";
 
 type CalendarView = "day" | "week" | "month";
 
@@ -31,7 +30,7 @@ export default async function CalendarPage({
   const params = await searchParams;
   const activeLocation = await getOperationalLocation();
   const view = params.view === "week" || params.view === "month" ? params.view : "day";
-  const selectedDate = params.date ? parseISO(params.date) : new Date();
+  const selectedDate = params.date ? parseYangonDateToUtc(params.date) : parseYangonDateToUtc(todayYangonDateInput());
   const roomId = params.roomId || "";
 
   const range =
@@ -65,7 +64,7 @@ export default async function CalendarPage({
   const linkFor = (next: Partial<{ view: CalendarView; date: Date; roomId: string }>) => {
     const query = new URLSearchParams({
       view: next.view ?? view,
-      date: format(next.date ?? selectedDate, "yyyy-MM-dd")
+      date: dateInputYangon(next.date ?? selectedDate)
     });
     const selectedRoom = next.roomId ?? roomId;
     if (selectedRoom) query.set("roomId", selectedRoom);
@@ -88,7 +87,7 @@ export default async function CalendarPage({
             </div>
             <div className="actions">
               <Link className="btn secondary" href={linkFor({ date: previousDate })}>Previous</Link>
-              <Link className="btn secondary" href={linkFor({ date: new Date() })}>Today</Link>
+              <Link className="btn secondary" href={linkFor({ date: parseYangonDateToUtc(todayYangonDateInput()) })}>Today</Link>
               <Link className="btn secondary" href={linkFor({ date: nextDate })}>Next</Link>
             </div>
           </div>
@@ -102,7 +101,7 @@ export default async function CalendarPage({
             <input type="hidden" name="view" value={view} />
             <div className="field">
               <label>Date</label>
-              <input name="date" type="date" defaultValue={format(selectedDate, "yyyy-MM-dd")} />
+              <input name="date" type="date" defaultValue={dateInputYangon(selectedDate)} />
             </div>
             <div className="field">
               <label>Room</label>
@@ -193,7 +192,7 @@ function MonthView({ days, bookings }: { days: Date[]; bookings: any[] }) {
       <div className="section-head"><h2>Month Overview</h2><span className="status">{bookings.length} bookings</span></div>
       <div className="month-grid">
         {days.map((day) => {
-          const dayBookings = bookings.filter((booking) => isSameDay(new Date(booking.startsAt), day));
+          const dayBookings = bookings.filter((booking) => dateInputYangon(booking.startsAt) === dateInputYangon(day));
           return (
             <div className="month-day" key={day.toISOString()}>
               <strong>{format(day, "d")}</strong>
@@ -217,10 +216,9 @@ function MonthView({ days, bookings }: { days: Date[]; bookings: any[] }) {
 }
 
 function overlapsHour(booking: any, day: Date, hour: number) {
-  const slotStart = new Date(day);
-  slotStart.setHours(hour, 0, 0, 0);
-  const slotEnd = new Date(day);
-  slotEnd.setHours(hour + 1, 0, 0, 0);
+  const date = dateInputYangon(day);
+  const slotStart = parseYangonDateTimeToUtc(`${date}T${String(hour).padStart(2, "0")}:00`);
+  const slotEnd = parseYangonDateTimeToUtc(`${date}T${String(hour + 1).padStart(2, "0")}:00`);
   return new Date(booking.startsAt) < slotEnd && new Date(booking.endsAt) > slotStart;
 }
 

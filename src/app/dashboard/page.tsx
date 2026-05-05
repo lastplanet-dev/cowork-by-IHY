@@ -1,15 +1,16 @@
-import { endOfDay, startOfDay, addDays } from "date-fns";
+import { addDays } from "date-fns";
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { setActiveLocation } from "@/lib/actions";
 import { prisma } from "@/lib/prisma";
 import { mmk, shortDate, shortTime } from "@/lib/format";
 import { getCurrentStaff, getOperationalLocation, getSelectableLocations } from "@/lib/session";
+import { endOfYangonDayUtc, startOfYangonDayUtc } from "@/lib/yangon-time";
 
 export default async function DashboardPage() {
   const [staff, activeLocation, locations] = await Promise.all([getCurrentStaff(), getOperationalLocation(), getSelectableLocations()]);
-  const todayStart = startOfDay(new Date());
-  const todayEnd = endOfDay(new Date());
+  const todayStart = startOfYangonDayUtc();
+  const todayEnd = endOfYangonDayUtc();
   const soon = addDays(new Date(), 7);
   const locationPaymentWhere = paymentLocationWhere(activeLocation.id);
 

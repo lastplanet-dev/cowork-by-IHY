@@ -1,23 +1,19 @@
-import { format } from "date-fns";
+import { dateTimeLocalYangon, formatYangonDate, formatYangonTime } from "@/lib/yangon-time";
 
 export function mmk(value: number | null | undefined) {
   return `${Number(value ?? 0).toLocaleString("en-US")} MMK`;
 }
 
 export function shortDate(date: Date | string | null | undefined) {
-  if (!date) return "Not set";
-  return format(new Date(date), "MMM d, yyyy");
+  return formatYangonDate(date);
 }
 
 export function shortTime(date: Date | string | null | undefined) {
-  if (!date) return "";
-  return format(new Date(date), "h:mm a");
+  return formatYangonTime(date);
 }
 
 export function dateTimeLocal(date: Date | string) {
-  const d = new Date(date);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return dateTimeLocalYangon(date);
 }
 
 export function calculateDiscount(price: number, type?: string | null, value?: number | null) {

@@ -1,7 +1,26 @@
 import { addDays, addHours, setHours, setMinutes } from "date-fns";
 import { PrismaClient, Role, CustomerType, CoffeeKind, PaymentMethod, PaymentStatus, PaymentFor } from "@prisma/client";
+import { stringifyOperatingHours } from "../src/lib/yangon-time";
 
 const prisma = new PrismaClient();
+const weekdayHours = stringifyOperatingHours({
+  sun: { open: false, start: "09:00", end: "18:00" },
+  mon: { open: true, start: "09:00", end: "18:00" },
+  tue: { open: true, start: "09:00", end: "18:00" },
+  wed: { open: true, start: "09:00", end: "18:00" },
+  thu: { open: true, start: "09:00", end: "18:00" },
+  fri: { open: true, start: "09:00", end: "18:00" },
+  sat: { open: true, start: "09:00", end: "17:00" }
+});
+const eventRoomHours = stringifyOperatingHours({
+  sun: { open: true, start: "09:00", end: "17:00" },
+  mon: { open: true, start: "09:00", end: "20:00" },
+  tue: { open: true, start: "09:00", end: "20:00" },
+  wed: { open: true, start: "09:00", end: "20:00" },
+  thu: { open: true, start: "09:00", end: "20:00" },
+  fri: { open: true, start: "09:00", end: "20:00" },
+  sat: { open: true, start: "09:00", end: "17:00" }
+});
 
 async function main() {
   await prisma.activityLog.deleteMany();
@@ -22,8 +41,8 @@ async function main() {
   await prisma.setting.deleteMany();
 
   const [downtown, riverside] = await Promise.all([
-    prisma.location.create({ data: { name: "IHY Downtown", address: "Main coworking space", phone: "09 111 222 333", coworkingSeatCapacity: 30 } }),
-    prisma.location.create({ data: { name: "IHY Riverside", address: "Second coworking space", phone: "09 444 555 666", coworkingSeatCapacity: 18 } })
+    prisma.location.create({ data: { name: "IHY Downtown", address: "Main coworking space", phone: "09 111 222 333", coworkingSeatCapacity: 30, operatingHoursJson: weekdayHours } }),
+    prisma.location.create({ data: { name: "IHY Riverside", address: "Second coworking space", phone: "09 444 555 666", coworkingSeatCapacity: 18, operatingHoursJson: weekdayHours } })
   ]);
 
   const [owner, host] = await Promise.all([
@@ -55,7 +74,7 @@ async function main() {
 
   const [meetingRoom, trainingRoom, focusRoom, booth] = await prisma.$transaction([
     prisma.room.create({ data: { locationId: downtown.id, name: "Meeting Room A", roomType: "Meeting Room", capacity: 8, hourlyRate: 25000, halfDayRate: 90000, fullDayRate: 160000, creditsCanBeUsed: true, minBookingMinutes: 60, bufferMinutes: 15 } }),
-    prisma.room.create({ data: { locationId: downtown.id, name: "Training Room", roomType: "Training Room", capacity: 24, hourlyRate: 60000, halfDayRate: 220000, fullDayRate: 400000, creditsCanBeUsed: false, minBookingMinutes: 120, bufferMinutes: 30 } }),
+    prisma.room.create({ data: { locationId: downtown.id, name: "Training Room", roomType: "Training Room", capacity: 24, hourlyRate: 60000, halfDayRate: 220000, fullDayRate: 400000, creditsCanBeUsed: false, minBookingMinutes: 120, bufferMinutes: 30, operatingHoursJson: eventRoomHours } }),
     prisma.room.create({ data: { locationId: downtown.id, name: "Focus Room 1", roomType: "Focus Room", capacity: 1, hourlyRate: 0, creditsCanBeUsed: false, minBookingMinutes: 30, bufferMinutes: 0 } }),
     prisma.room.create({ data: { locationId: downtown.id, name: "Phone Booth", roomType: "Phone Booth", capacity: 1, hourlyRate: 0, creditsCanBeUsed: false, minBookingMinutes: 30, bufferMinutes: 0 } })
   ]);

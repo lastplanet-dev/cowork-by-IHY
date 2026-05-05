@@ -1,6 +1,6 @@
 "use server";
 
-import { addDays, endOfDay, startOfDay } from "date-fns";
+import { addDays } from "date-fns";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -9,6 +9,7 @@ import { BookingStatus, CoffeeKind, CustomerType, DiscountType, PaymentFor, Paym
 import { prisma } from "@/lib/prisma";
 import { calculateDiscount } from "@/lib/format";
 import { canAdjustPayments, getOperationalLocation, getCurrentStaff } from "@/lib/session";
+import { endOfYangonDayUtc, isWithinOperatingHours, operatingHoursFromForm, operatingWindowForYangonDate, parseOperatingHours, parseYangonDateTimeToUtc, parseYangonDateToUtc, startOfYangonDayUtc } from "@/lib/yangon-time";
 
 const money = z.coerce.number().int().min(0);
 const optionalMoney = z.coerce.number().int().min(0).optional().nullable();
@@ -284,7 +285,7 @@ export async function checkInCustomer(formData: FormData) {
   }
 
   const existingToday = await prisma.checkIn.findFirst({
-    where: { customerId, checkedInAt: { gte: startOfDay(now), lte: endOfDay(now) } }
+    where: { customerId, checkedInAt: { gte: startOfYangonDayUtc(now), lte: endOfYangonDayUtc(now) } }
   });
   if (existingToday && !overrideDuplicate) {
     await redirectWithError("/check-in", "This customer is already checked in today. Use admin override if needed.");
@@ -355,13 +356,13 @@ export async function createBooking(formData: FormData) {
   const [staff, activeLocation] = await Promise.all([getCurrentStaff(), getOperationalLocation()]);
   const customerId = requiredText.parse(formData.get("customerId"));
   const roomId = requiredText.parse(formData.get("roomId"));
-  const startsAt = new Date(String(formData.get("startsAt")));
-  const endsAt = new Date(String(formData.get("endsAt")));
-  if (startsAt < new Date()) await redirectWithError("/bookings", "Booking start time must be in the future.");
+  const startsAt = parseYangonDateTimeToUtc(String(formData.get("startsAt")));
+  const endsAt = parseYangonDateTimeToUtc(String(formData.get("endsAt")));
+  if (startsAt < new Date()) await redirectWithError("/bookings", "Selected time is in the past. Please choose a future time.");
   if (endsAt <= startsAt) await redirectWithError("/bookings", "End time must be after start time.");
 
   const [room, customer] = await Promise.all([
-    prisma.room.findUniqueOrThrow({ where: { id: roomId } }),
+    prisma.room.findUniqueOrThrow({ where: { id: roomId }, include: { location: true } }),
     prisma.customer.findUniqueOrThrow({ where: { id: customerId } })
   ]);
   if (room.locationId !== activeLocation.id || customer.locationId !== activeLocation.id) {
@@ -369,6 +370,10 @@ export async function createBooking(formData: FormData) {
   }
   const durationHours = Math.max(0.5, (endsAt.getTime() - startsAt.getTime()) / 36e5);
   if (durationHours * 60 < room.minBookingMinutes) await redirectWithError("/bookings", `Minimum booking is ${room.minBookingMinutes} minutes.`);
+  const schedule = parseOperatingHours(room.operatingHoursJson ?? room.location?.operatingHoursJson);
+  if (!isWithinOperatingHours(startsAt, endsAt, schedule)) {
+    await redirectWithError("/bookings", "Selected time is outside the operating hours.");
+  }
 
   const clash = await prisma.booking.findFirst({
     where: {
@@ -453,14 +458,14 @@ export async function updateBooking(bookingId: string, formData: FormData) {
   const activeLocation = await getOperationalLocation();
   const customerId = requiredText.parse(formData.get("customerId"));
   const roomId = requiredText.parse(formData.get("roomId"));
-  const startsAt = new Date(String(formData.get("startsAt")));
-  const endsAt = new Date(String(formData.get("endsAt")));
-  if (startsAt < new Date()) await redirectWithError("/bookings", "Booking start time must be in the future.");
+  const startsAt = parseYangonDateTimeToUtc(String(formData.get("startsAt")));
+  const endsAt = parseYangonDateTimeToUtc(String(formData.get("endsAt")));
+  if (startsAt < new Date()) await redirectWithError("/bookings", "Selected time is in the past. Please choose a future time.");
   if (endsAt <= startsAt) await redirectWithError("/bookings", "End time must be after start time.");
 
   const existing = await prisma.booking.findUniqueOrThrow({ where: { id: bookingId } });
   const [room, customer] = await Promise.all([
-    prisma.room.findUniqueOrThrow({ where: { id: roomId } }),
+    prisma.room.findUniqueOrThrow({ where: { id: roomId }, include: { location: true } }),
     prisma.customer.findUniqueOrThrow({ where: { id: customerId } })
   ]);
   if (room.locationId !== activeLocation.id || customer.locationId !== activeLocation.id) {
@@ -468,6 +473,10 @@ export async function updateBooking(bookingId: string, formData: FormData) {
   }
   const durationHours = Math.max(0.5, (endsAt.getTime() - startsAt.getTime()) / 36e5);
   if (durationHours * 60 < room.minBookingMinutes) await redirectWithError("/bookings", `Minimum booking is ${room.minBookingMinutes} minutes.`);
+  const schedule = parseOperatingHours(room.operatingHoursJson ?? room.location?.operatingHoursJson);
+  if (!isWithinOperatingHours(startsAt, endsAt, schedule)) {
+    await redirectWithError("/bookings", "Selected time is outside the operating hours.");
+  }
 
   const clash = await prisma.booking.findFirst({
     where: {
@@ -588,11 +597,20 @@ export async function createCoworkingBooking(formData: FormData) {
   const [staff, activeLocation] = await Promise.all([getCurrentStaff(), getOperationalLocation()]);
   const customerId = requiredText.parse(formData.get("customerId"));
   const bookingDateText = requiredText.parse(formData.get("bookingDate"));
-  const bookingDate = startOfDay(new Date(`${bookingDateText}T00:00:00`));
-  const today = startOfDay(new Date());
+  const bookingDate = parseYangonDateToUtc(bookingDateText);
+  const today = startOfYangonDayUtc();
   const redirectTo = `/bookings?tab=coworking&date=${bookingDateText}`;
 
   if (bookingDate < today) await redirectWithError(redirectTo, "Coworking seat bookings must be for today or a future date.");
+  const schedule = parseOperatingHours(activeLocation.operatingHoursJson);
+  const operatingWindow = operatingWindowForYangonDate(bookingDateText, schedule);
+  if (!operatingWindow) {
+    await redirectWithError(redirectTo, "Selected time is outside the operating hours.");
+  }
+  if (!operatingWindow) return;
+  if (bookingDate.getTime() === today.getTime() && operatingWindow.end < new Date()) {
+    await redirectWithError(redirectTo, "Selected time is in the past. Please choose a future time.");
+  }
   if (activeLocation.coworkingSeatCapacity <= 0) {
     await redirectWithError(redirectTo, "Please set coworking seat capacity for this location in Settings first.");
   }
@@ -681,9 +699,10 @@ export async function upsertRoom(formData: FormData) {
     creditsCanBeUsed: formData.get("creditsCanBeUsed") === "on",
     isActive: formData.get("isActive") === "on"
   });
+  const operatingHoursJson = formData.get("inheritLocationHours") === "on" ? null : operatingHoursFromForm(formData, "roomHours");
 
-  if (id) await prisma.room.update({ where: { id }, data: { ...data, locationId } });
-  else await prisma.room.create({ data: { ...data, locationId } });
+  if (id) await prisma.room.update({ where: { id }, data: { ...data, operatingHoursJson, locationId } });
+  else await prisma.room.create({ data: { ...data, operatingHoursJson, locationId } });
   await setFlash(`Room ${id ? "updated" : "created"} successfully.`);
   revalidatePath("/rooms");
   revalidatePath("/settings");
@@ -910,9 +929,10 @@ export async function upsertLocation(formData: FormData) {
     ...Object.fromEntries(formData),
     isActive: formData.get("isActive") === "on"
   });
+  const operatingHoursJson = operatingHoursFromForm(formData, "locationHours");
 
-  if (id) await prisma.location.update({ where: { id }, data });
-  else await prisma.location.create({ data });
+  if (id) await prisma.location.update({ where: { id }, data: { ...data, operatingHoursJson } });
+  else await prisma.location.create({ data: { ...data, operatingHoursJson } });
   await setFlash(`Location ${id ? "updated" : "created"} successfully.`);
   revalidatePath("/settings");
   redirectAfterSave(formData);

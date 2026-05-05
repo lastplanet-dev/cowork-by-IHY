@@ -1,16 +1,18 @@
-import { addHours, format, setHours, setMinutes, startOfDay } from "date-fns";
+import { addHours } from "date-fns";
 import { PageHeader } from "@/components/PageHeader";
 import { CloseDetailsButton } from "@/components/CloseDetailsButton";
+import { BookingTimeGuard, CoworkingBookingGuard } from "@/components/BookingTimeGuard";
 import { cancelBooking, cancelCoworkingBooking, createBooking, createCoworkingBooking, markCoworkingBookingCheckedIn, updateBooking } from "@/lib/actions";
 import { prisma } from "@/lib/prisma";
 import { dateTimeLocal, mmk, shortDate, shortTime } from "@/lib/format";
 import { getOperationalLocation } from "@/lib/session";
+import { nearestYangonSlot, parseYangonDateToUtc, todayYangonDateInput } from "@/lib/yangon-time";
 
 export default async function BookingsPage({ searchParams }: { searchParams: Promise<{ q?: string; status?: string; date?: string; tab?: string }> }) {
   const params = await searchParams;
   const activeLocation = await getOperationalLocation();
-  const bookingDateText = params.date ?? format(new Date(), "yyyy-MM-dd");
-  const bookingDate = startOfDay(new Date(`${bookingDateText}T00:00:00`));
+  const bookingDateText = params.date ?? todayYangonDateInput();
+  const bookingDate = parseYangonDateToUtc(bookingDateText);
   const [customers, rooms, bookings, coworkingBookings] = await Promise.all([
     prisma.customer.findMany({ where: { locationId: activeLocation.id }, orderBy: { fullName: "asc" } }),
     prisma.room.findMany({ where: { isActive: true, locationId: activeLocation.id }, orderBy: { name: "asc" } }),
@@ -32,11 +34,12 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
       orderBy: [{ status: "asc" }, { customer: { fullName: "asc" } }]
     })
   ]);
-  const start = setMinutes(setHours(new Date(), 10), 0);
+  const start = nearestYangonSlot();
   const activeCoworkingBookings = coworkingBookings.filter((booking) => booking.status !== "CANCELLED");
   const bookedSeats = activeCoworkingBookings.length;
   const seatsLeft = Math.max(0, activeLocation.coworkingSeatCapacity - bookedSeats);
   const redirectTo = `/bookings?tab=coworking&date=${bookingDateText}`;
+  const roomSchedules = rooms.map((room) => ({ id: room.id, operatingHoursJson: room.operatingHoursJson }));
 
   return (
     <>
@@ -45,11 +48,11 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
         <details className="panel add-panel">
           <summary className="section-head"><h2>Room Bookings</h2><span className="btn">Add room booking</span></summary>
           <div className="floating-close"><CloseDetailsButton /></div>
-          <form action={createBooking} className="form-grid">
+          <BookingTimeGuard action={createBooking} className="form-grid" rooms={roomSchedules} locationOperatingHoursJson={activeLocation.operatingHoursJson}>
             <div className="field"><label>Customer/member</label><select name="customerId" required>{customers.map((c) => <option key={c.id} value={c.id}>{c.fullName} · {c.remainingCoworkingDays} days · {c.remainingMeetingCreditHours} credit hr</option>)}</select></div>
             <div className="field"><label>Room</label><select name="roomId" required>{rooms.map((r) => <option key={r.id} value={r.id}>{r.name} · {r.roomType.replaceAll("_", " ")} · {mmk(r.hourlyRate)}/hr</option>)}</select></div>
-            <div className="field"><label>Start date/time</label><input name="startsAt" type="datetime-local" defaultValue={dateTimeLocal(start)} required /></div>
-            <div className="field"><label>End date/time</label><input name="endsAt" type="datetime-local" defaultValue={dateTimeLocal(addHours(start, 1))} required /></div>
+            <div className="field"><label>Start date/time</label><input name="startsAt" type="datetime-local" step="300" min={dateTimeLocal(start)} defaultValue={dateTimeLocal(start)} required /></div>
+            <div className="field"><label>End date/time</label><input name="endsAt" type="datetime-local" step="300" min={dateTimeLocal(start)} defaultValue={dateTimeLocal(addHours(start, 1))} required /></div>
             <div className="field"><label>Discount type</label><select name="discountType" defaultValue=""><option value="">No discount</option><option value="PERCENTAGE">Percentage</option><option value="FIXED_AMOUNT">Fixed amount</option></select></div>
             <div className="field"><label>Discount value</label><input name="discountValue" type="number" min="0" defaultValue="0" /></div>
             <div className="field"><label>Discount reason</label><input name="discountReason" /></div>
@@ -58,7 +61,7 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
             <div className="field"><label>Payment method</label><select name="paymentMethod" defaultValue="CASH"><option value="CASH">Cash</option><option value="KBZPAY">KBZPay</option><option value="WAVEPAY">WavePay</option><option value="BANK_TRANSFER">Bank transfer</option><option value="CARD">Card</option><option value="OTHER">Other</option></select></div>
             <div className="field full"><label>Notes</label><textarea name="notes" /></div>
             <div className="actions"><button className="btn">Create booking</button></div>
-          </form>
+          </BookingTimeGuard>
         </details>
 
         <section className="panel">
@@ -82,12 +85,12 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
                     <div className="actions">
                       <details>
                         <summary className="btn secondary">Edit</summary>
-                        <form action={updateBooking.bind(null, b.id)} className="edit-popover form-grid">
+                        <BookingTimeGuard action={updateBooking.bind(null, b.id)} className="edit-popover form-grid" rooms={roomSchedules} locationOperatingHoursJson={activeLocation.operatingHoursJson}>
                           <div className="floating-close"><CloseDetailsButton /></div>
                           <div className="field"><label>Customer/member</label><select name="customerId" defaultValue={b.customerId} required>{customers.map((c) => <option key={c.id} value={c.id}>{c.fullName} · {c.remainingCoworkingDays} days · {c.remainingMeetingCreditHours} credit hr</option>)}</select></div>
                           <div className="field"><label>Room</label><select name="roomId" defaultValue={b.roomId} required>{rooms.map((r) => <option key={r.id} value={r.id}>{r.name} · {r.roomType.replaceAll("_", " ")} · {mmk(r.hourlyRate)}/hr</option>)}</select></div>
-                          <div className="field"><label>Start date/time</label><input name="startsAt" type="datetime-local" defaultValue={dateTimeLocal(b.startsAt)} required /></div>
-                          <div className="field"><label>End date/time</label><input name="endsAt" type="datetime-local" defaultValue={dateTimeLocal(b.endsAt)} required /></div>
+                          <div className="field"><label>Start date/time</label><input name="startsAt" type="datetime-local" step="300" min={dateTimeLocal(start)} defaultValue={dateTimeLocal(b.startsAt)} required /></div>
+                          <div className="field"><label>End date/time</label><input name="endsAt" type="datetime-local" step="300" min={dateTimeLocal(start)} defaultValue={dateTimeLocal(b.endsAt)} required /></div>
                           <div className="field"><label>Status</label><select name="status" defaultValue={b.status}><option value="PENDING">Pending</option><option value="CONFIRMED">Confirmed</option><option value="COMPLETED">Completed</option><option value="CANCELLED">Cancelled</option></select></div>
                           <div className="field"><label>Payment status</label><select name="paymentStatus" defaultValue={b.paymentStatus}><option value="UNPAID">Unpaid</option><option value="PAID">Paid</option><option value="PARTIALLY_PAID">Partially paid</option><option value="WAIVED">Waived</option></select></div>
                           <div className="field"><label>Payment method</label><select name="paymentMethod" defaultValue={b.payment?.method ?? "CASH"}><option value="CASH">Cash</option><option value="KBZPAY">KBZPay</option><option value="WAVEPAY">WavePay</option><option value="BANK_TRANSFER">Bank transfer</option><option value="CARD">Card</option><option value="OTHER">Other</option></select></div>
@@ -98,7 +101,7 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
                           <div className="field"><label>Approved by</label><input name="discountApprovedBy" defaultValue={b.discountApprovedBy ?? ""} /></div>
                           <div className="field full"><label>Notes</label><textarea name="notes" defaultValue={b.notes ?? ""} /></div>
                           <div className="actions"><button className="btn">Save booking</button></div>
-                        </form>
+                        </BookingTimeGuard>
                       </details>
                       {b.status !== "CANCELLED" ? <form action={cancelBooking.bind(null, b.id)}><button className="btn secondary">Cancel</button></form> : null}
                     </div>
@@ -131,12 +134,12 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
         <details className="panel add-panel" open={params.tab === "coworking"}>
           <summary className="section-head"><h2>New Coworking Seat Booking</h2><span className="btn">Add seat booking</span></summary>
           <div className="floating-close"><CloseDetailsButton /></div>
-          <form action={createCoworkingBooking} className="form-grid">
-            <div className="field"><label>Booking date</label><input name="bookingDate" type="date" defaultValue={bookingDateText} required /></div>
+          <CoworkingBookingGuard action={createCoworkingBooking} className="form-grid" locationOperatingHoursJson={activeLocation.operatingHoursJson}>
+            <div className="field"><label>Booking date</label><input name="bookingDate" type="date" min={todayYangonDateInput()} defaultValue={bookingDateText} required /></div>
             <div className="field"><label>Customer/member</label><select name="customerId" required>{customers.map((c) => <option key={c.id} value={c.id}>{c.customerCode ?? "No ID"} · {c.fullName} · {c.remainingCoworkingDays} days</option>)}</select></div>
             <div className="field full"><label>Notes</label><textarea name="notes" placeholder="Optional enquiry or arrival note" /></div>
             <div className="actions"><button className="btn">Reserve seat</button></div>
-          </form>
+          </CoworkingBookingGuard>
         </details>
 
         <section className="panel">

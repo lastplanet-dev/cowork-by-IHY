@@ -6,9 +6,9 @@
     "node": "22.x"
   },
   "scripts": {
-    "dev": "NODE_OPTIONS='--require ./scripts/register-localstorage.cjs' next dev",
-    "build": "prisma generate && prisma db push && NODE_OPTIONS='--require ./scripts/register-localstorage.cjs' next build",
-    "start": "NODE_OPTIONS='--require ./scripts/register-localstorage.cjs' next start",
+    "dev": "TZ=Asia/Yangon NODE_OPTIONS='--require ./scripts/register-localstorage.cjs' next dev",
+    "build": "TZ=Asia/Yangon prisma generate && prisma db push && TZ=Asia/Yangon NODE_OPTIONS='--require ./scripts/register-localstorage.cjs' next build",
+    "start": "TZ=Asia/Yangon NODE_OPTIONS='--require ./scripts/register-localstorage.cjs' next start",
     "postinstall": "prisma generate",
     "lint": "next lint",
     "db:seed": "tsx prisma/seed.ts",

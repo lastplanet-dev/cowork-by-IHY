@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { deleteLocation, setActiveLocation, updateSetting, upsertLocation } from "@/lib/actions";
 import { prisma } from "@/lib/prisma";
 import { getCurrentStaff, getOperationalLocation, getSelectableLocations } from "@/lib/session";
+import { dayKeys, parseOperatingHours } from "@/lib/yangon-time";
 
 export default async function SettingsPage() {
   const [settings, locations, activeLocation, staff] = await Promise.all([
@@ -59,6 +60,7 @@ export default async function SettingsPage() {
                       <div className="field"><label>Phone</label><input name="phone" defaultValue={location.phone ?? ""} /></div>
                       <div className="field"><label>Coworking seat capacity</label><input name="coworkingSeatCapacity" type="number" min="0" defaultValue={location.coworkingSeatCapacity} required /></div>
                       <div className="field full"><label>Address</label><input name="address" defaultValue={location.address ?? ""} /></div>
+                      <OperatingHoursFields prefix="locationHours" value={location.operatingHoursJson} title="Location and coworking operating hours" />
                       <label className="field"><span>Active</span><input name="isActive" type="checkbox" defaultChecked={location.isActive} /></label>
                       <div className="actions"><button className="btn">Save location</button></div>
                     </form>
@@ -76,6 +78,7 @@ export default async function SettingsPage() {
                 <div className="field"><label>Phone</label><input name="phone" /></div>
                 <div className="field"><label>Coworking seat capacity</label><input name="coworkingSeatCapacity" type="number" min="0" defaultValue="0" required /></div>
                 <div className="field full"><label>Address</label><input name="address" /></div>
+                <OperatingHoursFields prefix="locationHours" title="Location and coworking operating hours" />
                 <label className="field"><span>Active</span><input name="isActive" type="checkbox" defaultChecked /></label>
                 <div className="actions"><button className="btn">Save location</button></div>
               </form>
@@ -124,5 +127,23 @@ export default async function SettingsPage() {
         </section> : null}
       </div>
     </>
+  );
+}
+
+function OperatingHoursFields({ prefix, value, title }: { prefix: string; value?: string | null; title: string }) {
+  const hours = parseOperatingHours(value);
+  return (
+    <div className="field full">
+      <label>{title}</label>
+      <div className="hours-grid">
+        {dayKeys.map((day) => (
+          <div className="hours-row" key={day}>
+            <label><input name={`${prefix}_${day}_open`} type="checkbox" defaultChecked={hours[day].open} /> {day.toUpperCase()}</label>
+            <input name={`${prefix}_${day}_start`} type="time" step="300" defaultValue={hours[day].start} />
+            <input name={`${prefix}_${day}_end`} type="time" step="300" defaultValue={hours[day].end} />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
