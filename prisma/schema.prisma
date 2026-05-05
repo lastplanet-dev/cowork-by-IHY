@@ -63,104 +63,107 @@ enum PaymentFor {
 }
 
 model StaffUser {
-  id           String   @id @default(cuid())
-  locationId   String?
-  name         String
-  email        String   @unique
-  passwordHash String?
-  resetToken   String?
+  id               String    @id @default(cuid())
+  locationId       String?
+  name             String
+  email            String    @unique
+  passwordHash     String?
+  resetToken       String?
   resetRequestedAt DateTime?
-  role         Role     @default(ADMIN)
-  isActive     Boolean  @default(true)
-  canSettings  Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  role             Role      @default(ADMIN)
+  isActive         Boolean   @default(true)
+  canSettings      Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  location     Location? @relation(fields: [locationId], references: [id])
-  payments     Payment[] @relation("PaymentReceiver")
-  adjustments  PaymentAdjustment[] @relation("PaymentAdjuster")
-  activities   ActivityLog[]
+  location    Location?           @relation(fields: [locationId], references: [id])
+  payments    Payment[]           @relation("PaymentReceiver")
+  adjustments PaymentAdjustment[] @relation("PaymentAdjuster")
+  activities  ActivityLog[]
 }
 
 model Location {
-  id        String   @id @default(cuid())
-  name      String
-  address   String?
-  phone     String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  name                  String
+  address               String?
+  phone                 String?
+  coworkingSeatCapacity Int      @default(0)
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
-  staff      StaffUser[]
-  customers  Customer[]
-  passTypes  PassType[]
-  coffeeItems CoffeeItem[]
-  rooms      Room[]
-  roomTypes  RoomTypeSetting[]
+  staff             StaffUser[]
+  customers         Customer[]
+  passTypes         PassType[]
+  coffeeItems       CoffeeItem[]
+  rooms             Room[]
+  roomTypes         RoomTypeSetting[]
+  coworkingBookings CoworkingBooking[]
 }
 
 model Customer {
-  id                         String   @id @default(cuid())
-  customerCode               String?  @unique
-  locationId                 String?
-  fullName                   String
-  phone                      String
-  email                      String?
-  organization               String?
-  customerType               CustomerType @default(INDIVIDUAL)
-  notes                      String?
-  activePassName             String?
-  remainingCoworkingDays     Int      @default(0)
-  remainingMeetingCreditHours Float   @default(0)
-  membershipExpiresAt        DateTime?
-  isInside                   Boolean  @default(false)
-  createdAt                  DateTime @default(now())
-  updatedAt                  DateTime @updatedAt
+  id                          String       @id @default(cuid())
+  customerCode                String?      @unique
+  locationId                  String?
+  fullName                    String
+  phone                       String
+  email                       String?
+  organization                String?
+  customerType                CustomerType @default(INDIVIDUAL)
+  notes                       String?
+  activePassName              String?
+  remainingCoworkingDays      Int          @default(0)
+  remainingMeetingCreditHours Float        @default(0)
+  membershipExpiresAt         DateTime?
+  isInside                    Boolean      @default(false)
+  createdAt                   DateTime     @default(now())
+  updatedAt                   DateTime     @updatedAt
 
-  location    Location? @relation(fields: [locationId], references: [id])
-  memberships MembershipPurchase[]
-  payments    Payment[]
-  bookings    Booking[]
-  checkIns    CheckIn[]
-  coffeeSales CoffeeSale[]
+  location          Location?            @relation(fields: [locationId], references: [id])
+  memberships       MembershipPurchase[]
+  payments          Payment[]
+  bookings          Booking[]
+  coworkingBookings CoworkingBooking[]
+  checkIns          CheckIn[]
+  coffeeSales       CoffeeSale[]
 }
 
 model PassType {
-  id                         String   @id @default(cuid())
-  locationId                 String?
-  name                       String
-  price                      Int
-  coworkingDays              Int
-  validityDays               Int
-  meetingCreditHours         Float
-  freeCoffeePerCheckIn       Int      @default(1)
-  isActive                   Boolean  @default(true)
-  createdAt                  DateTime @default(now())
-  updatedAt                  DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  locationId           String?
+  name                 String
+  price                Int
+  coworkingDays        Int
+  validityDays         Int
+  meetingCreditHours   Float
+  freeCoffeePerCheckIn Int      @default(1)
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
-  location  Location? @relation(fields: [locationId], references: [id])
+  location  Location?            @relation(fields: [locationId], references: [id])
   purchases MembershipPurchase[]
 
   @@unique([locationId, name])
 }
 
 model MembershipPurchase {
-  id                         String   @id @default(cuid())
-  customerId                 String
-  passTypeId                 String
-  passName                   String
-  priceBeforeDiscount        Int
-  discountType               DiscountType?
-  discountValue              Int?
-  discountReason             String?
-  discountApprovedBy         String?
-  discountNotes              String?
-  finalPrice                 Int
-  coworkingDaysAdded         Int
-  meetingCreditHoursAdded    Float
-  startsAt                   DateTime @default(now())
-  expiresAt                  DateTime
-  createdAt                  DateTime @default(now())
+  id                      String        @id @default(cuid())
+  customerId              String
+  passTypeId              String
+  passName                String
+  priceBeforeDiscount     Int
+  discountType            DiscountType?
+  discountValue           Int?
+  discountReason          String?
+  discountApprovedBy      String?
+  discountNotes           String?
+  finalPrice              Int
+  coworkingDaysAdded      Int
+  meetingCreditHoursAdded Float
+  startsAt                DateTime      @default(now())
+  expiresAt               DateTime
+  createdAt               DateTime      @default(now())
 
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   passType PassType @relation(fields: [passTypeId], references: [id])
@@ -168,71 +171,71 @@ model MembershipPurchase {
 }
 
 model CheckIn {
-  id                  String   @id @default(cuid())
-  customerId          String
-  checkedInAt         DateTime @default(now())
-  checkedOutAt        DateTime?
-  wifiPasswordShown   String
-  freeCoffeeEntitled  Boolean  @default(true)
-  overrideDuplicate   Boolean  @default(false)
-  notes               String?
+  id                 String    @id @default(cuid())
+  customerId         String
+  checkedInAt        DateTime  @default(now())
+  checkedOutAt       DateTime?
+  wifiPasswordShown  String
+  freeCoffeeEntitled Boolean   @default(true)
+  overrideDuplicate  Boolean   @default(false)
+  notes              String?
 
-  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer    Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
   coffeeSales CoffeeSale[]
 
   @@index([customerId, checkedInAt])
 }
 
 model CoffeeItem {
-  id        String     @id @default(cuid())
+  id         String     @id @default(cuid())
   locationId String?
-  name      String
-  price     Int
-  kind      CoffeeKind @default(PAID_ITEM)
-  isActive  Boolean    @default(true)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  name       String
+  price      Int
+  kind       CoffeeKind @default(PAID_ITEM)
+  isActive   Boolean    @default(true)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
 
-  location Location? @relation(fields: [locationId], references: [id])
-  sales CoffeeSale[]
+  location Location?    @relation(fields: [locationId], references: [id])
+  sales    CoffeeSale[]
 
   @@unique([locationId, name])
 }
 
 model CoffeeSale {
-  id               String   @id @default(cuid())
-  customerId       String?
-  checkInId        String?
-  coffeeItemId     String
-  quantity         Int      @default(1)
-  unitPrice        Int
-  discountType     DiscountType?
-  discountValue    Int?
-  discountReason   String?
-  finalAmount      Int
-  soldAt           DateTime @default(now())
+  id             String        @id @default(cuid())
+  customerId     String?
+  checkInId      String?
+  coffeeItemId   String
+  quantity       Int           @default(1)
+  unitPrice      Int
+  discountType   DiscountType?
+  discountValue  Int?
+  discountReason String?
+  finalAmount    Int
+  soldAt         DateTime      @default(now())
 
-  customer   Customer?   @relation(fields: [customerId], references: [id])
-  checkIn    CheckIn?    @relation(fields: [checkInId], references: [id])
-  coffeeItem CoffeeItem  @relation(fields: [coffeeItemId], references: [id])
+  customer   Customer?  @relation(fields: [customerId], references: [id])
+  checkIn    CheckIn?   @relation(fields: [checkInId], references: [id])
+  coffeeItem CoffeeItem @relation(fields: [coffeeItemId], references: [id])
   payment    Payment?
 }
 
 model Room {
-  id                     String   @id @default(cuid())
-  locationId             String?
-  name                   String
-  roomType               String
-  capacity               Int
-  hourlyRate             Int
-  halfDayRate            Int?
-  fullDayRate            Int?
-  isActive               Boolean  @default(true)
-  creditsCanBeUsed       Boolean  @default(false)
-  minBookingMinutes      Int      @default(60)
-  bufferMinutes          Int      @default(0)
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  id                String   @id @default(cuid())
+  locationId        String?
+  name              String
+  roomType          String
+  capacity          Int
+  hourlyRate        Int
+  halfDayRate       Int?
+  fullDayRate       Int?
+  isActive          Boolean  @default(true)
+  creditsCanBeUsed  Boolean  @default(false)
+  minBookingMinutes Int      @default(60)
+  bufferMinutes     Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   location Location? @relation(fields: [locationId], references: [id])
   bookings Booking[]
@@ -253,7 +256,7 @@ model RoomTypeSetting {
 }
 
 model Booking {
-  id                  String   @id @default(cuid())
+  id                  String        @id @default(cuid())
   customerId          String
   roomId              String
   roomType            String
@@ -267,12 +270,12 @@ model Booking {
   discountApprovedBy  String?
   discountNotes       String?
   finalPrice          Int
-  creditHoursUsed     Float    @default(0)
+  creditHoursUsed     Float         @default(0)
   paymentStatus       PaymentStatus @default(UNPAID)
   notes               String?
   status              BookingStatus @default(CONFIRMED)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   room     Room     @relation(fields: [roomId], references: [id])
@@ -281,28 +284,45 @@ model Booking {
   @@index([roomId, startsAt, endsAt])
 }
 
-model Payment {
-  id                    String   @id @default(cuid())
-  customerId            String?
-  membershipPurchaseId  String?  @unique
-  bookingId             String?  @unique
-  coffeeSaleId          String?  @unique
-  paymentFor            PaymentFor
-  amount                Int
-  method                PaymentMethod
-  status                PaymentStatus
-  paymentDate           DateTime @default(now())
-  receiptNumber         String?
-  receivedById          String?
-  notes                 String?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+model CoworkingBooking {
+  id          String   @id @default(cuid())
+  locationId  String
+  customerId  String
+  bookingDate DateTime
+  status      String   @default("CONFIRMED")
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  customer   Customer? @relation(fields: [customerId], references: [id])
-  membership MembershipPurchase? @relation(fields: [membershipPurchaseId], references: [id])
-  booking    Booking? @relation(fields: [bookingId], references: [id])
-  coffeeSale CoffeeSale? @relation(fields: [coffeeSaleId], references: [id])
-  receivedBy StaffUser? @relation("PaymentReceiver", fields: [receivedById], references: [id])
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, customerId, bookingDate])
+  @@index([locationId, bookingDate])
+}
+
+model Payment {
+  id                   String        @id @default(cuid())
+  customerId           String?
+  membershipPurchaseId String?       @unique
+  bookingId            String?       @unique
+  coffeeSaleId         String?       @unique
+  paymentFor           PaymentFor
+  amount               Int
+  method               PaymentMethod
+  status               PaymentStatus
+  paymentDate          DateTime      @default(now())
+  receiptNumber        String?
+  receivedById         String?
+  notes                String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  customer    Customer?           @relation(fields: [customerId], references: [id])
+  membership  MembershipPurchase? @relation(fields: [membershipPurchaseId], references: [id])
+  booking     Booking?            @relation(fields: [bookingId], references: [id])
+  coffeeSale  CoffeeSale?         @relation(fields: [coffeeSaleId], references: [id])
+  receivedBy  StaffUser?          @relation("PaymentReceiver", fields: [receivedById], references: [id])
   adjustments PaymentAdjustment[]
 }
 

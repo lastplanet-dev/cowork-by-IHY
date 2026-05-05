@@ -47,6 +47,7 @@ export default async function SettingsPage() {
                 <strong>{location.name}</strong>
                 <p className="muted">{location.address ?? "No address saved."}</p>
                 <p className="muted">{location.phone ?? "No phone saved."}</p>
+                <p className="muted">{location.coworkingSeatCapacity} coworking seats</p>
                 <div className="actions">
                   <details>
                     <summary className="btn secondary">Edit</summary>
@@ -56,6 +57,7 @@ export default async function SettingsPage() {
                       <input type="hidden" name="redirectTo" value="/settings" />
                       <div className="field"><label>Name</label><input name="name" defaultValue={location.name} required /></div>
                       <div className="field"><label>Phone</label><input name="phone" defaultValue={location.phone ?? ""} /></div>
+                      <div className="field"><label>Coworking seat capacity</label><input name="coworkingSeatCapacity" type="number" min="0" defaultValue={location.coworkingSeatCapacity} required /></div>
                       <div className="field full"><label>Address</label><input name="address" defaultValue={location.address ?? ""} /></div>
                       <label className="field"><span>Active</span><input name="isActive" type="checkbox" defaultChecked={location.isActive} /></label>
                       <div className="actions"><button className="btn">Save location</button></div>
@@ -72,6 +74,7 @@ export default async function SettingsPage() {
                 <input type="hidden" name="redirectTo" value="/settings" />
                 <div className="field"><label>New location name</label><input name="name" required /></div>
                 <div className="field"><label>Phone</label><input name="phone" /></div>
+                <div className="field"><label>Coworking seat capacity</label><input name="coworkingSeatCapacity" type="number" min="0" defaultValue="0" required /></div>
                 <div className="field full"><label>Address</label><input name="address" /></div>
                 <label className="field"><span>Active</span><input name="isActive" type="checkbox" defaultChecked /></label>
                 <div className="actions"><button className="btn">Save location</button></div>

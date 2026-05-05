@@ -584,6 +584,83 @@ export async function cancelBooking(id: string) {
   revalidatePath("/calendar");
 }
 
+export async function createCoworkingBooking(formData: FormData) {
+  const [staff, activeLocation] = await Promise.all([getCurrentStaff(), getOperationalLocation()]);
+  const customerId = requiredText.parse(formData.get("customerId"));
+  const bookingDateText = requiredText.parse(formData.get("bookingDate"));
+  const bookingDate = startOfDay(new Date(`${bookingDateText}T00:00:00`));
+  const today = startOfDay(new Date());
+  const redirectTo = `/bookings?tab=coworking&date=${bookingDateText}`;
+
+  if (bookingDate < today) await redirectWithError(redirectTo, "Coworking seat bookings must be for today or a future date.");
+  if (activeLocation.coworkingSeatCapacity <= 0) {
+    await redirectWithError(redirectTo, "Please set coworking seat capacity for this location in Settings first.");
+  }
+
+  const customer = await prisma.customer.findUniqueOrThrow({ where: { id: customerId } });
+  if (customer.locationId !== activeLocation.id) {
+    await redirectWithError(redirectTo, "Customer must belong to your current location.");
+  }
+
+  const [existingBooking, bookedSeats] = await Promise.all([
+    prisma.coworkingBooking.findUnique({
+      where: { locationId_customerId_bookingDate: { locationId: activeLocation.id, customerId, bookingDate } }
+    }),
+    prisma.coworkingBooking.count({
+      where: { locationId: activeLocation.id, bookingDate, status: { not: "CANCELLED" } }
+    })
+  ]);
+
+  if (existingBooking && existingBooking.status !== "CANCELLED") {
+    await redirectWithError(redirectTo, "This customer already has a coworking seat booking for that day.");
+  }
+  if (bookedSeats >= activeLocation.coworkingSeatCapacity) {
+    await redirectWithError(redirectTo, "Coworking seats are fully booked for that day.");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    if (existingBooking) {
+      await tx.coworkingBooking.update({
+        where: { id: existingBooking.id },
+        data: { status: "CONFIRMED", notes: optionalText(formData, "notes") }
+      });
+    } else {
+      await tx.coworkingBooking.create({
+        data: {
+          locationId: activeLocation.id,
+          customerId,
+          bookingDate,
+          notes: optionalText(formData, "notes")
+        }
+      });
+    }
+    await tx.activityLog.create({
+      data: { staffId: staff.id, message: `Reserved coworking seat for ${customer.fullName}`, entity: "coworking-booking", entityId: customerId }
+    });
+  });
+
+  revalidatePath("/bookings");
+  revalidatePath("/dashboard");
+  await setFlash("Coworking seat booked successfully.");
+  redirect(redirectTo);
+}
+
+export async function cancelCoworkingBooking(id: string, formData: FormData) {
+  await prisma.coworkingBooking.update({ where: { id }, data: { status: "CANCELLED" } });
+  await setFlash("Coworking seat booking cancelled successfully.");
+  revalidatePath("/bookings");
+  revalidatePath("/dashboard");
+  redirectAfterSave(formData);
+}
+
+export async function markCoworkingBookingCheckedIn(id: string, formData: FormData) {
+  await prisma.coworkingBooking.update({ where: { id }, data: { status: "CHECKED_IN" } });
+  await setFlash("Coworking seat booking marked as arrived.");
+  revalidatePath("/bookings");
+  revalidatePath("/dashboard");
+  redirectAfterSave(formData);
+}
+
 export async function upsertRoom(formData: FormData) {
   const id = optionalText(formData, "id");
   const activeLocation = await getOperationalLocation();
@@ -827,6 +904,7 @@ export async function upsertLocation(formData: FormData) {
     name: requiredText,
     address: z.string().optional(),
     phone: z.string().optional(),
+    coworkingSeatCapacity: z.coerce.number().int().min(0),
     isActive: z.boolean()
   }).parse({
     ...Object.fromEntries(formData),

@@ -7,6 +7,7 @@ async function main() {
   await prisma.activityLog.deleteMany();
   await prisma.paymentAdjustment.deleteMany();
   await prisma.payment.deleteMany();
+  await prisma.coworkingBooking.deleteMany();
   await prisma.booking.deleteMany();
   await prisma.coffeeSale.deleteMany();
   await prisma.checkIn.deleteMany();
@@ -21,8 +22,8 @@ async function main() {
   await prisma.setting.deleteMany();
 
   const [downtown, riverside] = await Promise.all([
-    prisma.location.create({ data: { name: "IHY Downtown", address: "Main coworking space", phone: "09 111 222 333" } }),
-    prisma.location.create({ data: { name: "IHY Riverside", address: "Second coworking space", phone: "09 444 555 666" } })
+    prisma.location.create({ data: { name: "IHY Downtown", address: "Main coworking space", phone: "09 111 222 333", coworkingSeatCapacity: 30 } }),
+    prisma.location.create({ data: { name: "IHY Riverside", address: "Second coworking space", phone: "09 444 555 666", coworkingSeatCapacity: 18 } })
   ]);
 
   const [owner, host] = await Promise.all([
@@ -198,6 +199,13 @@ async function main() {
       paymentStatus: PaymentStatus.UNPAID,
       status: "PENDING"
     }
+  });
+
+  await prisma.coworkingBooking.createMany({
+    data: [
+      { locationId: downtown.id, customerId: maya.id, bookingDate: new Date(today.getFullYear(), today.getMonth(), today.getDate()), notes: "Reserved a hot desk." },
+      { locationId: downtown.id, customerId: koAung.id, bookingDate: new Date(today.getFullYear(), today.getMonth(), today.getDate()), status: "CHECKED_IN", notes: "Arrived in the morning." }
+    ]
   });
 
   await prisma.setting.createMany({

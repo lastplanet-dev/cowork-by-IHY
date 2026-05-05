@@ -1,15 +1,17 @@
-import { addHours, setHours, setMinutes } from "date-fns";
+import { addHours, format, setHours, setMinutes, startOfDay } from "date-fns";
 import { PageHeader } from "@/components/PageHeader";
 import { CloseDetailsButton } from "@/components/CloseDetailsButton";
-import { cancelBooking, createBooking, updateBooking } from "@/lib/actions";
+import { cancelBooking, cancelCoworkingBooking, createBooking, createCoworkingBooking, markCoworkingBookingCheckedIn, updateBooking } from "@/lib/actions";
 import { prisma } from "@/lib/prisma";
 import { dateTimeLocal, mmk, shortDate, shortTime } from "@/lib/format";
 import { getOperationalLocation } from "@/lib/session";
 
-export default async function BookingsPage({ searchParams }: { searchParams: Promise<{ q?: string; status?: string }> }) {
+export default async function BookingsPage({ searchParams }: { searchParams: Promise<{ q?: string; status?: string; date?: string; tab?: string }> }) {
   const params = await searchParams;
   const activeLocation = await getOperationalLocation();
-  const [customers, rooms, bookings] = await Promise.all([
+  const bookingDateText = params.date ?? format(new Date(), "yyyy-MM-dd");
+  const bookingDate = startOfDay(new Date(`${bookingDateText}T00:00:00`));
+  const [customers, rooms, bookings, coworkingBookings] = await Promise.all([
     prisma.customer.findMany({ where: { locationId: activeLocation.id }, orderBy: { fullName: "asc" } }),
     prisma.room.findMany({ where: { isActive: true, locationId: activeLocation.id }, orderBy: { name: "asc" } }),
     prisma.booking.findMany({
@@ -23,16 +25,25 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
       include: { customer: true, room: true, payment: true },
       orderBy: { startsAt: "desc" },
       take: 80
+    }),
+    prisma.coworkingBooking.findMany({
+      where: { locationId: activeLocation.id, bookingDate },
+      include: { customer: true },
+      orderBy: [{ status: "asc" }, { customer: { fullName: "asc" } }]
     })
   ]);
   const start = setMinutes(setHours(new Date(), 10), 0);
+  const activeCoworkingBookings = coworkingBookings.filter((booking) => booking.status !== "CANCELLED");
+  const bookedSeats = activeCoworkingBookings.length;
+  const seatsLeft = Math.max(0, activeLocation.coworkingSeatCapacity - bookedSeats);
+  const redirectTo = `/bookings?tab=coworking&date=${bookingDateText}`;
 
   return (
     <>
-      <PageHeader title="Bookings" subtitle="Create, filter, cancel, and track paid or credit-backed room bookings." />
+      <PageHeader title="Bookings" subtitle="Manage advance room bookings and daily coworking seat reservations by location." />
       <div className="content">
         <details className="panel add-panel">
-          <summary className="section-head"><h2>Bookings</h2><span className="btn">Add booking</span></summary>
+          <summary className="section-head"><h2>Room Bookings</h2><span className="btn">Add room booking</span></summary>
           <div className="floating-close"><CloseDetailsButton /></div>
           <form action={createBooking} className="form-grid">
             <div className="field"><label>Customer/member</label><select name="customerId" required>{customers.map((c) => <option key={c.id} value={c.id}>{c.fullName} · {c.remainingCoworkingDays} days · {c.remainingMeetingCreditHours} credit hr</option>)}</select></div>
@@ -52,7 +63,7 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
 
         <section className="panel">
           <div className="section-head">
-            <h2>Bookings</h2>
+            <h2>Room Bookings</h2>
             <form className="actions"><input name="q" placeholder="Search customer or room" defaultValue={params.q ?? ""} /><select name="status" defaultValue={params.status ?? ""}><option value="">All statuses</option><option value="PENDING">Pending</option><option value="CONFIRMED">Confirmed</option><option value="COMPLETED">Completed</option><option value="CANCELLED">Cancelled</option></select><button className="btn secondary">Filter</button></form>
           </div>
           <table>
@@ -94,6 +105,75 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
                   </td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </section>
+
+        <section className="panel">
+          <div className="section-head">
+            <div>
+              <h2>Coworking Seat Bookings</h2>
+              <p className="muted">Reserve daily coworking seats so the host can answer availability enquiries quickly.</p>
+            </div>
+            <form className="actions">
+              <input type="hidden" name="tab" value="coworking" />
+              <input name="date" type="date" defaultValue={bookingDateText} />
+              <button className="btn secondary">View day</button>
+            </form>
+          </div>
+          <div className="grid cols-3">
+            <div className="card metric"><span>Total seats</span><strong>{activeLocation.coworkingSeatCapacity}</strong></div>
+            <div className="card metric"><span>Booked seats</span><strong>{bookedSeats}</strong></div>
+            <div className="card metric"><span>Seats left</span><strong>{seatsLeft}</strong></div>
+          </div>
+        </section>
+
+        <details className="panel add-panel" open={params.tab === "coworking"}>
+          <summary className="section-head"><h2>New Coworking Seat Booking</h2><span className="btn">Add seat booking</span></summary>
+          <div className="floating-close"><CloseDetailsButton /></div>
+          <form action={createCoworkingBooking} className="form-grid">
+            <div className="field"><label>Booking date</label><input name="bookingDate" type="date" defaultValue={bookingDateText} required /></div>
+            <div className="field"><label>Customer/member</label><select name="customerId" required>{customers.map((c) => <option key={c.id} value={c.id}>{c.customerCode ?? "No ID"} · {c.fullName} · {c.remainingCoworkingDays} days</option>)}</select></div>
+            <div className="field full"><label>Notes</label><textarea name="notes" placeholder="Optional enquiry or arrival note" /></div>
+            <div className="actions"><button className="btn">Reserve seat</button></div>
+          </form>
+        </details>
+
+        <section className="panel">
+          <div className="section-head">
+            <h2>Coworking Bookings for {shortDate(bookingDate)}</h2>
+            <span className={seatsLeft > 0 ? "status ok" : "status bad"}>{seatsLeft} seats left</span>
+          </div>
+          <table>
+            <thead><tr><th>Customer ID</th><th>Customer</th><th>Pass</th><th>Days left</th><th>Status</th><th>Notes</th><th></th></tr></thead>
+            <tbody>
+              {coworkingBookings.map((booking) => (
+                <tr key={booking.id}>
+                  <td>{booking.customer.customerCode ?? "-"}</td>
+                  <td>{booking.customer.fullName}</td>
+                  <td>{booking.customer.activePassName ?? "No active pass"}</td>
+                  <td>{booking.customer.remainingCoworkingDays}</td>
+                  <td><span className={booking.status === "CANCELLED" ? "status bad" : booking.status === "CHECKED_IN" ? "status ok" : "status"}>{booking.status.replaceAll("_", " ")}</span></td>
+                  <td>{booking.notes ?? "-"}</td>
+                  <td>
+                    {booking.status !== "CANCELLED" ? (
+                      <div className="actions">
+                        {booking.status !== "CHECKED_IN" ? (
+                          <form action={markCoworkingBookingCheckedIn.bind(null, booking.id)}>
+                            <input type="hidden" name="redirectTo" value={redirectTo} />
+                            <button className="btn secondary">Mark arrived</button>
+                          </form>
+                        ) : null}
+                        <form action={cancelCoworkingBooking.bind(null, booking.id)}>
+                          <input type="hidden" name="redirectTo" value={redirectTo} />
+                          <button className="btn secondary">Cancel</button>
+                        </form>
+                      </div>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+              {!coworkingBookings.length && <tr><td colSpan={7} className="muted">No coworking seats booked for this day.</td></tr>}
             </tbody>
           </table>
         </section>

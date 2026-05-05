@@ -13,7 +13,7 @@ export default async function DashboardPage() {
   const soon = addDays(new Date(), 7);
   const locationPaymentWhere = paymentLocationWhere(activeLocation.id);
 
-  const [todayCheckIns, inside, bookings, expiring, payments, sales, activities, creditMembers] = await Promise.all([
+  const [todayCheckIns, inside, bookings, coworkingBookings, expiring, payments, sales, activities, creditMembers] = await Promise.all([
     prisma.checkIn.count({ where: { checkedInAt: { gte: todayStart, lte: todayEnd }, customer: { locationId: activeLocation.id } } }),
     prisma.customer.findMany({ where: { isInside: true, locationId: activeLocation.id }, orderBy: { fullName: "asc" } }),
     prisma.booking.findMany({
@@ -21,6 +21,12 @@ export default async function DashboardPage() {
       include: { customer: true, room: true },
       orderBy: { startsAt: "asc" },
       take: 8
+    }),
+    prisma.coworkingBooking.findMany({
+      where: { locationId: activeLocation.id, bookingDate: todayStart, status: { not: "CANCELLED" } },
+      include: { customer: true },
+      orderBy: [{ status: "asc" }, { customer: { fullName: "asc" } }],
+      take: 10
     }),
     prisma.customer.findMany({
       where: { locationId: activeLocation.id, OR: [{ membershipExpiresAt: { lt: new Date() } }, { membershipExpiresAt: { gte: new Date(), lte: soon } }, { remainingCoworkingDays: { lte: 1 } }] },
@@ -38,6 +44,7 @@ export default async function DashboardPage() {
   ]);
 
   const salesTotal = sales.reduce((sum, row) => sum + (row._sum.amount ?? 0), 0);
+  const seatsLeft = Math.max(0, activeLocation.coworkingSeatCapacity - coworkingBookings.length);
 
   return (
     <>
@@ -64,7 +71,7 @@ export default async function DashboardPage() {
         <div className="grid cols-4">
           <div className="card metric"><span>Today’s check-ins</span><strong>{todayCheckIns}</strong></div>
           <div className="card metric"><span>Currently inside</span><strong>{inside.length}</strong></div>
-          <div className="card metric"><span>Upcoming bookings</span><strong>{bookings.length}</strong></div>
+          <div className="card metric"><span>Coworking seats left</span><strong>{seatsLeft}</strong></div>
           <div className="card metric"><span>Daily sales</span><strong>{mmk(salesTotal)}</strong></div>
         </div>
 
@@ -106,6 +113,15 @@ export default async function DashboardPage() {
         </div>
 
         <div className="grid cols-3">
+          <section className="panel">
+            <div className="section-head"><h3>Today’s Coworking Seats</h3><Link className="btn secondary" href="/bookings?tab=coworking">Manage</Link></div>
+            <div className="activity">
+              <div><strong>{coworkingBookings.length} booked / {activeLocation.coworkingSeatCapacity} total</strong><br /><span className="muted">{seatsLeft} seats left today</span></div>
+              {coworkingBookings.map((booking) => <div key={booking.id}><strong>{booking.customer.fullName}</strong><br /><span className="muted">{booking.status.replaceAll("_", " ")}</span></div>)}
+              {!coworkingBookings.length && <p className="muted">No coworking seats booked today.</p>}
+            </div>
+          </section>
+
           <section className="panel">
             <div className="section-head"><h3>Active Users Inside</h3></div>
             <div className="activity">
