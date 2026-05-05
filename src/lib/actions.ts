@@ -751,19 +751,23 @@ export async function upsertStaff(formData: FormData) {
   const id = optionalText(formData, "id");
   const activeLocation = await getOperationalLocation();
   const locationId = optionalText(formData, "locationId") ?? activeLocation.id;
+  const password = optionalText(formData, "password");
+  const confirmPassword = optionalText(formData, "confirmPassword");
+  if (!id && !password) throw new Error("Password is required for new staff accounts.");
+  if (password && password.length < 8) throw new Error("Password must be at least 8 characters.");
+  if (password && password !== confirmPassword) throw new Error("Passwords do not match.");
   const data = z.object({
     name: requiredText,
     email: z.string().email(),
     role: z.nativeEnum(Role),
-    canSettings: z.boolean(),
     isActive: z.boolean()
   }).parse({
     ...Object.fromEntries(formData),
-    canSettings: formData.get("canSettings") === "on",
     isActive: formData.get("isActive") === "on"
   });
-  if (id) await prisma.staffUser.update({ where: { id }, data: { ...data, locationId } });
-  else await prisma.staffUser.create({ data: { ...data, locationId, passwordHash: "changeme" } });
+  const payload = { ...data, locationId, canSettings: data.role === Role.ADMIN };
+  if (id) await prisma.staffUser.update({ where: { id }, data: { ...payload, ...(password ? { passwordHash: `local-demo:${password}` } : {}) } });
+  else await prisma.staffUser.create({ data: { ...payload, passwordHash: `local-demo:${password}` } });
   revalidatePath("/staff");
   redirectAfterSave(formData);
 }

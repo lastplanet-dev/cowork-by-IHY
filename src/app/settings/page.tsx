@@ -24,7 +24,7 @@ export default async function SettingsPage() {
     <>
       <PageHeader title="Settings" subtitle="Configure locations, rooms, packages, coffee menu, users, and system-wide defaults." />
       <div className="content">
-        <section className="panel">
+        {isSuperAdmin ? <section className="panel">
           <div className="section-head">
             <div>
               <h2>Locations</h2>
@@ -84,7 +84,7 @@ export default async function SettingsPage() {
               <p className="muted">{activeLocation.address ?? "No address saved yet."}</p>
             </div>
           )}
-        </section>
+        </section> : null}
 
         <section className="panel">
           <div className="section-head"><h2>Configurable Modules</h2><span className="status ok">{activeLocation.name}</span></div>
@@ -92,13 +92,13 @@ export default async function SettingsPage() {
             <a className="card module-card" href="/passes"><strong>Membership/pass types</strong><p className="muted">Add or edit coworking packages, prices, validity, day balance, meeting credits, and coffee entitlement.</p><span>Configure passes</span></a>
             <a className="card module-card" href="/rooms"><strong>Rooms and prices</strong><p className="muted">Add or edit meeting rooms, training rooms, phone booths, rates, capacities, credit rules, and booking buffers.</p><span>Configure rooms</span></a>
             <a className="card module-card" href="/coffee"><strong>Coffee menu</strong><p className="muted">Add or edit free coffee, upgrade options, paid coffee items, and POS prices.</p><span>Configure coffee</span></a>
-            {isSuperAdmin ? <a className="card module-card" href="/staff"><strong>Staff users</strong><p className="muted">Add or edit staff accounts, roles, assigned locations, permissions, and active status.</p><span>Manage staff</span></a> : null}
+            {isSuperAdmin ? <a className="card module-card" href="/staff"><strong>Staff users</strong><p className="muted">Add or edit staff accounts, roles, assigned locations, passwords, and active status.</p><span>Manage staff</span></a> : null}
             <a className="card module-card" href="/payments"><strong>Payment collection</strong><p className="muted">Review unpaid records, complete collections, and confirm who still needs follow-up.</p><span>Review payments</span></a>
             <a className="card module-card" href="/reports"><strong>Reports</strong><p className="muted">View sales, room utilization, discounts, renewal follow-up, customer visits, and meeting credit usage.</p><span>View reports</span></a>
           </div>
         </section>
 
-        <section className="panel">
+        {isSuperAdmin ? <section className="panel">
           <div className="section-head">
             <div>
               <h2>Workspace Defaults</h2>
@@ -118,7 +118,7 @@ export default async function SettingsPage() {
               </form>
             ))}
           </div>
-        </section>
+        </section> : null}
       </div>
     </>
   );

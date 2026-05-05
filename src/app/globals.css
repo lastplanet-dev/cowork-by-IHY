@@ -208,6 +208,17 @@ textarea {
   font-size: 28px;
 }
 
+.compact-card strong,
+.module-card strong {
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.compact-card p,
+.module-card p {
+  margin: 0;
+}
+
 .module-card {
   display: grid;
   gap: 8px;
