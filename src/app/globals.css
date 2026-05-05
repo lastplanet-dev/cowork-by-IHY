@@ -599,16 +599,28 @@ tr:hover td {
 }
 
 .edit-popover {
-  width: min(760px, calc(100vw - 56px));
+  width: min(760px, calc(100vw - 32px));
   margin-top: 10px;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: white;
   box-shadow: var(--shadow);
-  position: absolute;
-  right: 28px;
+  position: fixed;
+  top: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-height: calc(100vh - 128px);
+  overflow: auto;
   z-index: 5;
+}
+
+.inline-details {
+  position: relative;
+}
+
+.auth-popover {
+  width: min(520px, calc(100vw - 32px));
 }
 
 .payment-complete-form {
