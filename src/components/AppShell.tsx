@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cookies, headers } from "next/headers";
 import { CalendarDays, CreditCard, Gauge, KeyRound, Settings, Users, DoorOpen, UserCircle } from "lucide-react";
+import { FlashMessage } from "@/components/FlashMessage";
 
 const nav = [
   ["/dashboard", "Dashboard", Gauge],
@@ -18,8 +19,10 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
   const [cookieStore, headerStore] = await Promise.all([cookies(), headers()]);
   const pathname = headerStore.get("x-cowork-pathname") ?? "";
   const isLoggedIn = Boolean(cookieStore.get("coworkStaffId")?.value);
+  const flashMessage = cookieStore.get("coworkFlash")?.value;
+  const flashType = cookieStore.get("coworkFlashType")?.value === "danger" ? "danger" : "ok";
   const isAuthPage = pathname === "/" || pathname.startsWith("/login");
-  if (!isLoggedIn || isAuthPage) return <main className="auth-main">{children}</main>;
+  if (!isLoggedIn || isAuthPage) return <main className="auth-main"><FlashMessage message={flashMessage ? decodeURIComponent(flashMessage) : undefined} type={flashType} />{children}</main>;
 
   return (
     <div className="shell">
@@ -41,7 +44,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
       </aside>
-      <main className="main">{children}</main>
+      <main className="main"><FlashMessage message={flashMessage ? decodeURIComponent(flashMessage) : undefined} type={flashType} />{children}</main>
     </div>
   );
 }

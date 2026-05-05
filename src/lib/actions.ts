@@ -44,6 +44,17 @@ function redirectAfterSave(formData: FormData) {
   if (redirectTo) redirect(redirectTo);
 }
 
+async function setFlash(message: string, type: "ok" | "danger" = "ok") {
+  const cookieStore = await cookies();
+  cookieStore.set("coworkFlash", encodeURIComponent(message), { path: "/", maxAge: 20, sameSite: "lax" });
+  cookieStore.set("coworkFlashType", type, { path: "/", maxAge: 20, sameSite: "lax" });
+}
+
+async function redirectWithError(path: string, message: string): Promise<never> {
+  await setFlash(message, "danger");
+  redirect(path);
+}
+
 async function nextCustomerCode(locationId: string) {
   const count = await prisma.customer.count({ where: { locationId } });
   return `IHY-${String(count + 1).padStart(5, "0")}`;
@@ -121,6 +132,7 @@ export async function createCustomer(formData: FormData) {
     }
   });
   await prisma.activityLog.create({ data: { message: `Registered ${customer.fullName}`, entity: "customer", entityId: customer.id } });
+  await setFlash(`Customer ${customer.fullName} registered successfully.`);
   revalidatePath("/customers");
   redirect(`/customers/${customer.id}`);
 }
@@ -150,6 +162,7 @@ export async function updateCustomer(customerId: string, formData: FormData) {
     }
   });
   await prisma.activityLog.create({ data: { message: `Updated customer profile`, entity: "customer", entityId: customerId } });
+  await setFlash("Customer profile updated successfully.");
   revalidatePath("/customers");
   revalidatePath(`/customers/${customerId}`);
 }
@@ -157,6 +170,7 @@ export async function updateCustomer(customerId: string, formData: FormData) {
 export async function deleteCustomer(customerId: string) {
   await prisma.customer.delete({ where: { id: customerId } });
   await prisma.activityLog.create({ data: { message: "Deleted customer", entity: "customer", entityId: customerId } });
+  await setFlash("Customer deleted successfully.");
   revalidatePath("/customers");
   redirect("/customers");
 }
@@ -181,6 +195,7 @@ export async function upsertPassType(formData: FormData) {
   if (id) await prisma.passType.update({ where: { id }, data: { ...data, locationId } });
   else await prisma.passType.create({ data: { ...data, locationId } });
   await prisma.activityLog.create({ data: { message: `${id ? "Updated" : "Created"} pass type ${data.name}`, entity: "pass" } });
+  await setFlash(`Pass type ${id ? "updated" : "created"} successfully.`);
   revalidatePath("/passes");
   revalidatePath("/settings");
   redirectAfterSave(formData);
@@ -188,6 +203,7 @@ export async function upsertPassType(formData: FormData) {
 
 export async function deletePassType(id: string) {
   await prisma.passType.delete({ where: { id } });
+  await setFlash("Pass type deleted successfully.");
   revalidatePath("/passes");
 }
 
@@ -251,6 +267,7 @@ export async function sellPass(customerId: string, formData: FormData) {
   revalidatePath("/customers");
   revalidatePath(`/customers/${customerId}`);
   revalidatePath("/dashboard");
+  await setFlash(`${existing.fullName} renewed successfully.`);
 }
 
 export async function checkInCustomer(formData: FormData) {
@@ -260,17 +277,17 @@ export async function checkInCustomer(formData: FormData) {
   const [staff, activeLocation] = await Promise.all([getCurrentStaff(), getOperationalLocation()]);
   const customer = await prisma.customer.findUniqueOrThrow({ where: { id: customerId } });
   const now = new Date();
-  if (customer.locationId !== activeLocation.id) throw new Error("This customer belongs to another location.");
+  if (customer.locationId !== activeLocation.id) await redirectWithError("/check-in", "This customer belongs to another location.");
 
   if (!customer.membershipExpiresAt || customer.membershipExpiresAt < now || customer.remainingCoworkingDays <= 0) {
-    throw new Error("Customer needs an active pass with remaining coworking days before check-in.");
+    await redirectWithError("/check-in", "Customer needs an active pass with remaining coworking days before check-in.");
   }
 
   const existingToday = await prisma.checkIn.findFirst({
     where: { customerId, checkedInAt: { gte: startOfDay(now), lte: endOfDay(now) } }
   });
   if (existingToday && !overrideDuplicate) {
-    throw new Error("This customer is already checked in today. Use admin override if needed.");
+    await redirectWithError("/check-in", "This customer is already checked in today. Use admin override if needed.");
   }
 
   const wifi = await prisma.setting.findUnique({ where: { key: "wifiPassword" } });
@@ -320,6 +337,7 @@ export async function checkInCustomer(formData: FormData) {
   revalidatePath("/check-in");
   revalidatePath("/dashboard");
   revalidatePath(`/customers/${customerId}`);
+  await setFlash(`${customer.fullName} checked in successfully.`);
 }
 
 export async function checkOutCustomer(customerId: string) {
@@ -330,6 +348,7 @@ export async function checkOutCustomer(customerId: string) {
   });
   revalidatePath("/dashboard");
   revalidatePath("/check-in");
+  await setFlash("Customer checked out successfully.");
 }
 
 export async function createBooking(formData: FormData) {
@@ -338,18 +357,18 @@ export async function createBooking(formData: FormData) {
   const roomId = requiredText.parse(formData.get("roomId"));
   const startsAt = new Date(String(formData.get("startsAt")));
   const endsAt = new Date(String(formData.get("endsAt")));
-  if (startsAt < new Date()) throw new Error("Booking start time must be in the future.");
-  if (endsAt <= startsAt) throw new Error("End time must be after start time.");
+  if (startsAt < new Date()) await redirectWithError("/bookings", "Booking start time must be in the future.");
+  if (endsAt <= startsAt) await redirectWithError("/bookings", "End time must be after start time.");
 
   const [room, customer] = await Promise.all([
     prisma.room.findUniqueOrThrow({ where: { id: roomId } }),
     prisma.customer.findUniqueOrThrow({ where: { id: customerId } })
   ]);
   if (room.locationId !== activeLocation.id || customer.locationId !== activeLocation.id) {
-    throw new Error("Booking customer and room must belong to your current location.");
+    await redirectWithError("/bookings", "Booking customer and room must belong to your current location.");
   }
   const durationHours = Math.max(0.5, (endsAt.getTime() - startsAt.getTime()) / 36e5);
-  if (durationHours * 60 < room.minBookingMinutes) throw new Error(`Minimum booking is ${room.minBookingMinutes} minutes.`);
+  if (durationHours * 60 < room.minBookingMinutes) await redirectWithError("/bookings", `Minimum booking is ${room.minBookingMinutes} minutes.`);
 
   const clash = await prisma.booking.findFirst({
     where: {
@@ -359,11 +378,11 @@ export async function createBooking(formData: FormData) {
       endsAt: { gt: startsAt }
     }
   });
-  if (clash) throw new Error("This room is already booked for that time.");
+  if (clash) await redirectWithError("/bookings", "This room is already booked for that time.");
 
   const active = customer.membershipExpiresAt && customer.membershipExpiresAt >= new Date() && customer.remainingCoworkingDays > 0;
   if (isFocusRoomType(room.roomType) && !active) {
-    throw new Error("Focus room and phone booth bookings are free only for active coworking users.");
+    await redirectWithError("/bookings", "Focus room and phone booth bookings are free only for active coworking users.");
   }
 
   let priceBeforeDiscount = Math.round(room.hourlyRate * durationHours);
@@ -406,7 +425,7 @@ export async function createBooking(formData: FormData) {
       await tx.customer.update({ where: { id: customerId }, data: { remainingMeetingCreditHours: { decrement: creditHoursUsed } } });
     }
 
-    if (finalPrice > 0 || paymentStatus !== "UNPAID") {
+    if (paymentStatus !== PaymentStatus.WAIVED) {
       await tx.payment.create({
         data: {
           customerId,
@@ -427,6 +446,7 @@ export async function createBooking(formData: FormData) {
   revalidatePath("/bookings");
   revalidatePath("/calendar");
   revalidatePath("/dashboard");
+  await setFlash("Booking created successfully.");
 }
 
 export async function updateBooking(bookingId: string, formData: FormData) {
@@ -435,8 +455,8 @@ export async function updateBooking(bookingId: string, formData: FormData) {
   const roomId = requiredText.parse(formData.get("roomId"));
   const startsAt = new Date(String(formData.get("startsAt")));
   const endsAt = new Date(String(formData.get("endsAt")));
-  if (startsAt < new Date()) throw new Error("Booking start time must be in the future.");
-  if (endsAt <= startsAt) throw new Error("End time must be after start time.");
+  if (startsAt < new Date()) await redirectWithError("/bookings", "Booking start time must be in the future.");
+  if (endsAt <= startsAt) await redirectWithError("/bookings", "End time must be after start time.");
 
   const existing = await prisma.booking.findUniqueOrThrow({ where: { id: bookingId } });
   const [room, customer] = await Promise.all([
@@ -444,10 +464,10 @@ export async function updateBooking(bookingId: string, formData: FormData) {
     prisma.customer.findUniqueOrThrow({ where: { id: customerId } })
   ]);
   if (room.locationId !== activeLocation.id || customer.locationId !== activeLocation.id) {
-    throw new Error("Booking customer and room must belong to your current location.");
+    await redirectWithError("/bookings", "Booking customer and room must belong to your current location.");
   }
   const durationHours = Math.max(0.5, (endsAt.getTime() - startsAt.getTime()) / 36e5);
-  if (durationHours * 60 < room.minBookingMinutes) throw new Error(`Minimum booking is ${room.minBookingMinutes} minutes.`);
+  if (durationHours * 60 < room.minBookingMinutes) await redirectWithError("/bookings", `Minimum booking is ${room.minBookingMinutes} minutes.`);
 
   const clash = await prisma.booking.findFirst({
     where: {
@@ -458,11 +478,11 @@ export async function updateBooking(bookingId: string, formData: FormData) {
       endsAt: { gt: startsAt }
     }
   });
-  if (clash) throw new Error("This room is already booked for that time.");
+  if (clash) await redirectWithError("/bookings", "This room is already booked for that time.");
 
   const active = customer.membershipExpiresAt && customer.membershipExpiresAt >= new Date() && customer.remainingCoworkingDays > 0;
   if (isFocusRoomType(room.roomType) && !active) {
-    throw new Error("Focus room and phone booth bookings are free only for active coworking users.");
+    await redirectWithError("/bookings", "Focus room and phone booth bookings are free only for active coworking users.");
   }
 
   let priceBeforeDiscount = Math.round(room.hourlyRate * durationHours);
@@ -554,10 +574,12 @@ export async function updateBooking(bookingId: string, formData: FormData) {
   revalidatePath("/calendar");
   revalidatePath("/dashboard");
   revalidatePath(`/customers/${customerId}`);
+  await setFlash("Booking updated successfully.");
 }
 
 export async function cancelBooking(id: string) {
   await prisma.booking.update({ where: { id }, data: { status: BookingStatus.CANCELLED } });
+  await setFlash("Booking cancelled successfully.");
   revalidatePath("/bookings");
   revalidatePath("/calendar");
 }
@@ -585,6 +607,7 @@ export async function upsertRoom(formData: FormData) {
 
   if (id) await prisma.room.update({ where: { id }, data: { ...data, locationId } });
   else await prisma.room.create({ data: { ...data, locationId } });
+  await setFlash(`Room ${id ? "updated" : "created"} successfully.`);
   revalidatePath("/rooms");
   revalidatePath("/settings");
   redirectAfterSave(formData);
@@ -592,6 +615,7 @@ export async function upsertRoom(formData: FormData) {
 
 export async function deleteRoom(id: string) {
   await prisma.room.delete({ where: { id } });
+  await setFlash("Room deleted successfully.");
   revalidatePath("/rooms");
 }
 
@@ -609,12 +633,14 @@ export async function upsertRoomType(formData: FormData) {
 
   if (id) await prisma.roomTypeSetting.update({ where: { id }, data });
   else await prisma.roomTypeSetting.create({ data: { ...data, locationId: activeLocation.id } });
+  await setFlash(`Room type ${id ? "updated" : "created"} successfully.`);
   revalidatePath("/rooms");
   redirectAfterSave(formData);
 }
 
 export async function deleteRoomType(id: string) {
   await prisma.roomTypeSetting.delete({ where: { id } });
+  await setFlash("Room type deleted successfully.");
   revalidatePath("/rooms");
 }
 
@@ -630,6 +656,7 @@ export async function upsertCoffeeItem(formData: FormData) {
   }).parse({ ...Object.fromEntries(formData), isActive: formData.get("isActive") === "on" });
   if (id) await prisma.coffeeItem.update({ where: { id }, data: { ...data, locationId } });
   else await prisma.coffeeItem.create({ data: { ...data, locationId } });
+  await setFlash(`Coffee menu item ${id ? "updated" : "created"} successfully.`);
   revalidatePath("/coffee");
   revalidatePath("/settings");
   redirectAfterSave(formData);
@@ -664,10 +691,12 @@ export async function recordCoffeeSale(formData: FormData) {
   });
   revalidatePath("/coffee");
   revalidatePath("/dashboard");
+  await setFlash("Coffee sale recorded successfully.");
 }
 
 export async function deleteCoffeeItem(id: string) {
   await prisma.coffeeItem.delete({ where: { id } });
+  await setFlash("Coffee menu item deleted successfully.");
   revalidatePath("/coffee");
 }
 
@@ -696,6 +725,7 @@ export async function updatePayment(paymentId: string, formData: FormData) {
       }
     })
   ]);
+  await setFlash("Payment adjustment saved successfully.");
   revalidatePath("/payments");
 }
 
@@ -738,6 +768,7 @@ export async function completePayment(paymentId: string, formData: FormData) {
   revalidatePath("/payments");
   revalidatePath("/dashboard");
   revalidatePath("/bookings");
+  await setFlash("Payment marked as paid successfully.");
 }
 
 export async function voidPayment(paymentId: string, formData: FormData) {
@@ -768,6 +799,7 @@ export async function upsertStaff(formData: FormData) {
   const payload = { ...data, locationId, canSettings: data.role === Role.ADMIN };
   if (id) await prisma.staffUser.update({ where: { id }, data: { ...payload, ...(password ? { passwordHash: `local-demo:${password}` } : {}) } });
   else await prisma.staffUser.create({ data: { ...payload, passwordHash: `local-demo:${password}` } });
+  await setFlash(`Staff account ${id ? "updated" : "created"} successfully.`);
   revalidatePath("/staff");
   redirectAfterSave(formData);
 }
@@ -777,6 +809,7 @@ export async function deleteStaff(staffId: string) {
   if (staff.role !== Role.SUPER_ADMIN) throw new Error("Only Super Admin can delete staff accounts.");
   if (staff.id === staffId) throw new Error("You cannot delete your own active account.");
   await prisma.staffUser.delete({ where: { id: staffId } });
+  await setFlash("Staff account deleted successfully.");
   revalidatePath("/staff");
 }
 
@@ -784,6 +817,7 @@ export async function updateSetting(formData: FormData) {
   const key = requiredText.parse(formData.get("key"));
   const value = requiredText.parse(formData.get("value"));
   await prisma.setting.upsert({ where: { key }, create: { key, value }, update: { value } });
+  await setFlash("Workspace default saved successfully.");
   revalidatePath("/settings");
 }
 
@@ -801,6 +835,7 @@ export async function upsertLocation(formData: FormData) {
 
   if (id) await prisma.location.update({ where: { id }, data });
   else await prisma.location.create({ data });
+  await setFlash(`Location ${id ? "updated" : "created"} successfully.`);
   revalidatePath("/settings");
   redirectAfterSave(formData);
 }
@@ -809,6 +844,7 @@ export async function deleteLocation(id: string) {
   const staff = await getCurrentStaff();
   if (staff.role !== Role.SUPER_ADMIN) throw new Error("Only Super Admin can delete locations.");
   await prisma.location.delete({ where: { id } });
+  await setFlash("Location deleted successfully.");
   revalidatePath("/settings");
 }
 
@@ -822,6 +858,7 @@ export async function setActiveLocation(formData: FormData) {
     update: { value: locationId }
   });
   revalidatePath("/");
+  await setFlash("Location switched successfully.");
   redirectAfterSave(formData);
   redirect("/dashboard");
 }
@@ -836,6 +873,7 @@ export async function updateOwnPassword(formData: FormData) {
     data: { passwordHash: `local-demo:${newPassword}` }
   });
   await prisma.activityLog.create({ data: { staffId: staff.id, message: "Updated profile password", entity: "staff", entityId: staff.id } });
+  await setFlash("Password updated successfully.");
   revalidatePath("/profile");
 }
 

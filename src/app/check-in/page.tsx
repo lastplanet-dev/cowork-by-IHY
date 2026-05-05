@@ -1,6 +1,7 @@
 import { Coffee, DoorOpen } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { CloseDetailsButton } from "@/components/CloseDetailsButton";
+import { UpgradePaymentFields } from "@/components/UpgradePaymentFields";
 import { checkInCustomer, checkOutCustomer, recordCoffeeSale } from "@/lib/actions";
 import { prisma } from "@/lib/prisma";
 import { mmk, shortDate, shortTime } from "@/lib/format";
@@ -25,8 +26,7 @@ export default async function CheckInPage() {
           <div className="floating-close"><CloseDetailsButton /></div>
           <form action={checkInCustomer} className="form-grid">
             <div className="field full"><label>Customer with active pass</label><select name="customerId" required>{activeCustomers.map((c) => <option key={c.id} value={c.id}>{c.fullName} · {c.activePassName} · {c.remainingCoworkingDays} days · {c.remainingMeetingCreditHours} credit hr</option>)}</select></div>
-            <label className="field"><span>Milk-based upgrade</span><input name="upgradeCoffee" type="checkbox" /></label>
-            <div className="field coffee-upgrade-method"><label>Payment method for upgrade</label><select name="paymentMethod" defaultValue="CASH"><option value="CASH">Cash</option><option value="KBZPAY">KBZPay</option><option value="WAVEPAY">WavePay</option><option value="BANK_TRANSFER">Bank transfer</option><option value="CARD">Card</option><option value="OTHER">Other</option></select></div>
+            <UpgradePaymentFields />
             <label className="field"><span>Admin duplicate override</span><input name="overrideDuplicate" type="checkbox" /></label>
             <div className="actions"><button className="btn"><DoorOpen size={17} /> Check in</button></div>
           </form>
