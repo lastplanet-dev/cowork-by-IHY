@@ -40,6 +40,16 @@ function paymentFromForm(formData: FormData) {
   };
 }
 
+async function bookingPaymentAmount(formData: FormData, finalPrice: number, paymentStatus: PaymentStatus, redirectPath = "/bookings") {
+  if (paymentStatus === PaymentStatus.PARTIALLY_PAID) {
+    const deposit = money.parse(formData.get("amountPaid"));
+    if (deposit <= 0) await redirectWithError(redirectPath, "Please enter the paid deposit amount.");
+    if (deposit >= finalPrice) await redirectWithError(redirectPath, "Deposit amount should be less than the final booking price.");
+    return deposit;
+  }
+  return finalPrice;
+}
+
 function redirectAfterSave(formData: FormData) {
   const redirectTo = optionalText(formData, "redirectTo");
   if (redirectTo) redirect(redirectTo);
@@ -57,8 +67,21 @@ async function redirectWithError(path: string, message: string): Promise<never> 
 }
 
 async function nextCustomerCode(locationId: string) {
+  const location = await prisma.location.findUnique({ where: { id: locationId } });
+  const prefix = (location?.name ?? "IHY")
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join("")
+    .replace(/[^A-Z0-9]/gi, "")
+    .slice(0, 4)
+    .toUpperCase() || "IHY";
   const count = await prisma.customer.count({ where: { locationId } });
-  return `IHY-${String(count + 1).padStart(5, "0")}`;
+  for (let index = count + 1; index < count + 1000; index += 1) {
+    const code = `${prefix}-${String(index).padStart(5, "0")}`;
+    const existing = await prisma.customer.findUnique({ where: { customerCode: code } });
+    if (!existing) return code;
+  }
+  return `${prefix}-${Date.now()}`;
 }
 
 function isFocusRoomType(roomType: string) {
@@ -215,6 +238,7 @@ export async function sellPass(customerId: string, formData: FormData) {
   const discount = discountFromForm(formData);
   const finalPrice = calculateDiscount(pass.price, discount.discountType, discount.discountValue);
   const payment = paymentFromForm(formData);
+  const paymentAmount = await bookingPaymentAmount(formData, finalPrice, payment.status, `/customers/${customerId}`);
   const now = new Date();
   const existing = await prisma.customer.findUniqueOrThrow({ where: { id: customerId } });
   if (existing.locationId !== activeLocation.id || pass.locationId !== activeLocation.id) {
@@ -254,7 +278,7 @@ export async function sellPass(customerId: string, formData: FormData) {
         customerId,
         membershipPurchaseId: membership.id,
         paymentFor: PaymentFor.PASS,
-        amount: finalPrice,
+        amount: paymentAmount,
         method: payment.method,
         status: payment.status,
         receiptNumber: payment.receiptNumber,
@@ -406,6 +430,7 @@ export async function createBooking(formData: FormData) {
   const discount = discountFromForm(formData);
   const finalPrice = calculateDiscount(creditAdjustedPrice, discount.discountType, discount.discountValue);
   const paymentStatus = String(formData.get("paymentStatus") || (finalPrice === 0 ? "WAIVED" : "UNPAID")) as PaymentStatus;
+  const paymentAmount = await bookingPaymentAmount(formData, finalPrice, paymentStatus);
 
   await prisma.$transaction(async (tx) => {
     const booking = await tx.booking.create({
@@ -436,7 +461,7 @@ export async function createBooking(formData: FormData) {
           customerId,
           bookingId: booking.id,
           paymentFor: PaymentFor.BOOKING,
-          amount: finalPrice,
+          amount: paymentAmount,
           method: String(formData.get("paymentMethod") || "CASH") as PaymentMethod,
           status: paymentStatus,
           receiptNumber: optionalText(formData, "receiptNumber"),
@@ -512,6 +537,7 @@ export async function updateBooking(bookingId: string, formData: FormData) {
   const discount = discountFromForm(formData);
   const finalPrice = calculateDiscount(creditAdjustedPrice, discount.discountType, discount.discountValue);
   const paymentStatus = String(formData.get("paymentStatus") || (finalPrice === 0 ? "WAIVED" : "UNPAID")) as PaymentStatus;
+  const paymentAmount = await bookingPaymentAmount(formData, finalPrice, paymentStatus);
   const status = String(formData.get("status") || "CONFIRMED") as BookingStatus;
   const staff = await getCurrentStaff();
 
@@ -555,7 +581,7 @@ export async function updateBooking(bookingId: string, formData: FormData) {
         where: { id: payment.id },
         data: {
           customerId,
-          amount: finalPrice,
+          amount: paymentAmount,
           status: paymentStatus,
           method: String(formData.get("paymentMethod") || payment.method) as PaymentMethod,
           receiptNumber: optionalText(formData, "receiptNumber")
@@ -567,7 +593,7 @@ export async function updateBooking(bookingId: string, formData: FormData) {
           customerId,
           bookingId,
           paymentFor: PaymentFor.BOOKING,
-          amount: finalPrice,
+          amount: paymentAmount,
           method: String(formData.get("paymentMethod") || "CASH") as PaymentMethod,
           status: paymentStatus,
           receiptNumber: optionalText(formData, "receiptNumber"),

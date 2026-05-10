@@ -71,6 +71,7 @@ export default async function CustomerProfilePage({ params }: { params: Promise<
               <div className="field"><label>Approved by</label><input name="discountApprovedBy" /></div>
               <div className="field"><label>Payment method</label><select name="paymentMethod" defaultValue="CASH"><option value="CASH">Cash</option><option value="KBZPAY">KBZPay</option><option value="WAVEPAY">WavePay</option><option value="BANK_TRANSFER">Bank transfer</option><option value="CARD">Card</option><option value="OTHER">Other</option></select></div>
               <div className="field"><label>Payment status</label><select name="paymentStatus" defaultValue="PAID"><option value="PAID">Paid</option><option value="UNPAID">Unpaid</option><option value="PARTIALLY_PAID">Partially paid</option><option value="WAIVED">Waived</option></select></div>
+              <div className="field"><label>Paid deposit amount</label><input name="amountPaid" type="number" min="0" placeholder="Required for partially paid" /></div>
               <div className="field full"><label>Receipt/reference</label><input name="receiptNumber" /></div>
               <div className="actions"><button className="btn">Confirm renewal</button></div>
             </form>

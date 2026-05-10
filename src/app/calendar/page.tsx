@@ -1,17 +1,6 @@
 import {
   addDays,
-  addMonths,
-  addWeeks,
-  eachDayOfInterval,
-  endOfDay,
-  endOfMonth,
-  endOfWeek,
   format,
-  startOfDay,
-  startOfMonth,
-  startOfWeek,
-  subMonths,
-  subWeeks
 } from "date-fns";
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
@@ -30,15 +19,11 @@ export default async function CalendarPage({
   const params = await searchParams;
   const activeLocation = await getOperationalLocation();
   const view = params.view === "week" || params.view === "month" ? params.view : "day";
-  const selectedDate = params.date ? parseYangonDateToUtc(params.date) : parseYangonDateToUtc(todayYangonDateInput());
+  const selectedDateInput = params.date ?? todayYangonDateInput();
+  const selectedDate = parseYangonDateToUtc(selectedDateInput);
   const roomId = params.roomId || "";
 
-  const range =
-    view === "month"
-      ? { start: startOfMonth(selectedDate), end: endOfMonth(selectedDate) }
-      : view === "week"
-        ? { start: startOfWeek(selectedDate, { weekStartsOn: 1 }), end: endOfWeek(selectedDate, { weekStartsOn: 1 }) }
-        : { start: startOfDay(selectedDate), end: endOfDay(selectedDate) };
+  const range = calendarRange(view, selectedDateInput);
 
   const [rooms, bookings] = await Promise.all([
     prisma.room.findMany({ where: { isActive: true, locationId: activeLocation.id }, orderBy: [{ roomType: "asc" }, { name: "asc" }] }),
@@ -56,10 +41,10 @@ export default async function CalendarPage({
   ]);
 
   const visibleRooms = roomId ? rooms.filter((room) => room.id === roomId) : rooms;
-  const days = eachDayOfInterval(range);
+  const days = daysBetween(range.start, range.end);
   const hours = Array.from({ length: 12 }, (_, i) => i + 8);
-  const previousDate = view === "month" ? subMonths(selectedDate, 1) : view === "week" ? subWeeks(selectedDate, 1) : addDays(selectedDate, -1);
-  const nextDate = view === "month" ? addMonths(selectedDate, 1) : view === "week" ? addWeeks(selectedDate, 1) : addDays(selectedDate, 1);
+  const previousDate = addDays(selectedDate, view === "month" ? -31 : view === "week" ? -7 : -1);
+  const nextDate = addDays(selectedDate, view === "month" ? 31 : view === "week" ? 7 : 1);
 
   const linkFor = (next: Partial<{ view: CalendarView; date: Date; roomId: string }>) => {
     const query = new URLSearchParams({
@@ -224,6 +209,33 @@ function overlapsHour(booking: any, day: Date, hour: number) {
 
 function calendarTitle(view: CalendarView, start: Date, end: Date) {
   if (view === "month") return format(start, "MMMM yyyy");
-  if (view === "week") return `${format(start, "MMM d")} - ${format(end, "MMM d, yyyy")}`;
-  return format(start, "EEEE, MMMM d, yyyy");
+  if (view === "week") return `${shortDate(start)} - ${shortDate(end)}`;
+  return shortDate(start);
+}
+
+function calendarRange(view: CalendarView, dateInput: string) {
+  const [year, month, day] = dateInput.split("-").map(Number);
+  if (view === "month") {
+    const startInput = `${year}-${String(month).padStart(2, "0")}-01`;
+    const nextMonth = month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 };
+    const end = new Date(parseYangonDateToUtc(`${nextMonth.year}-${String(nextMonth.month).padStart(2, "0")}-01`).getTime() - 1);
+    return { start: parseYangonDateToUtc(startInput), end };
+  }
+  if (view === "week") {
+    const selected = new Date(Date.UTC(year, month - 1, day));
+    const dayOfWeek = selected.getUTCDay() || 7;
+    const monday = new Date(selected);
+    monday.setUTCDate(selected.getUTCDate() - dayOfWeek + 1);
+    const startInput = `${monday.getUTCFullYear()}-${String(monday.getUTCMonth() + 1).padStart(2, "0")}-${String(monday.getUTCDate()).padStart(2, "0")}`;
+    const start = parseYangonDateToUtc(startInput);
+    return { start, end: new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000 - 1) };
+  }
+  const start = parseYangonDateToUtc(dateInput);
+  return { start, end: new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1) };
+}
+
+function daysBetween(start: Date, end: Date) {
+  const days: Date[] = [];
+  for (let day = start; day <= end; day = addDays(day, 1)) days.push(day);
+  return days;
 }
