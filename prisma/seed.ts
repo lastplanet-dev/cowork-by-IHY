@@ -4,7 +4,7 @@ import { stringifyOperatingHours } from "../src/lib/yangon-time";
 
 const prisma = new PrismaClient();
 const weekdayHours = stringifyOperatingHours({
-  sun: { open: false, start: "09:00", end: "18:00" },
+  sun: { open: true, start: "09:00", end: "18:00" },
   mon: { open: true, start: "09:00", end: "18:00" },
   tue: { open: true, start: "09:00", end: "18:00" },
   wed: { open: true, start: "09:00", end: "18:00" },

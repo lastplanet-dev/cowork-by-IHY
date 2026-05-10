@@ -9,7 +9,7 @@ import { BookingStatus, CoffeeKind, CustomerType, DiscountType, PaymentFor, Paym
 import { prisma } from "@/lib/prisma";
 import { calculateDiscount } from "@/lib/format";
 import { canAdjustPayments, getOperationalLocation, getCurrentStaff } from "@/lib/session";
-import { endOfYangonDayUtc, isWithinOperatingHours, operatingHoursFromForm, operatingWindowForYangonDate, parseOperatingHours, parseYangonDateTimeToUtc, parseYangonDateToUtc, startOfYangonDayUtc } from "@/lib/yangon-time";
+import { endOfYangonDayUtc, isWithinOperatingHours, operatingHoursFromForm, operatingHoursLabelForDate, operatingWindowForYangonDate, parseOperatingHours, parseYangonDateTimeToUtc, parseYangonDateToUtc, startOfYangonDayUtc } from "@/lib/yangon-time";
 
 const money = z.coerce.number().int().min(0);
 const optionalMoney = z.coerce.number().int().min(0).optional().nullable();
@@ -48,6 +48,27 @@ async function bookingPaymentAmount(formData: FormData, finalPrice: number, paym
     return deposit;
   }
   return finalPrice;
+}
+
+async function bookingPriceForRoom(room: { hourlyRate: number; halfDayRate: number | null; fullDayRate: number | null; bookingPricingMode?: string }, durationHours: number, formData: FormData) {
+  const rentalPackage = String(formData.get("rentalPackage") || "HOURLY");
+  if (room.bookingPricingMode === "HALF_DAY_FULL_DAY" && rentalPackage === "HOURLY") {
+    await redirectWithError("/bookings", "This room can only be booked as half-day or full-day.");
+  }
+  if (rentalPackage === "HALF_DAY") {
+    if (!room.halfDayRate) await redirectWithError("/bookings", "Half-day rate is not configured for this room.");
+    if (Math.abs(durationHours - 4) > 0.01) await redirectWithError("/bookings", "Half-day bookings must be exactly 4 hours.");
+    return room.halfDayRate ?? 0;
+  }
+  if (rentalPackage === "FULL_DAY") {
+    if (!room.fullDayRate) await redirectWithError("/bookings", "Full-day rate is not configured for this room.");
+    if (Math.abs(durationHours - 8) > 0.01) await redirectWithError("/bookings", "Full-day bookings must be exactly 8 hours.");
+    return room.fullDayRate ?? 0;
+  }
+  let price = Math.round(room.hourlyRate * durationHours);
+  if (durationHours >= 8 && room.fullDayRate) price = room.fullDayRate;
+  else if (durationHours >= 4 && room.halfDayRate) price = room.halfDayRate;
+  return price;
 }
 
 function redirectAfterSave(formData: FormData) {
@@ -396,7 +417,7 @@ export async function createBooking(formData: FormData) {
   if (durationHours * 60 < room.minBookingMinutes) await redirectWithError("/bookings", `Minimum booking is ${room.minBookingMinutes} minutes.`);
   const schedule = parseOperatingHours(room.operatingHoursJson ?? room.location?.operatingHoursJson);
   if (!isWithinOperatingHours(startsAt, endsAt, schedule)) {
-    await redirectWithError("/bookings", "Selected time is outside the operating hours.");
+    await redirectWithError("/bookings", `Selected time is outside the operating hours. ${room.name} is available: ${operatingHoursLabelForDate(startsAt, schedule)}.`);
   }
 
   const clash = await prisma.booking.findFirst({
@@ -414,9 +435,7 @@ export async function createBooking(formData: FormData) {
     await redirectWithError("/bookings", "Focus room and phone booth bookings are free only for active coworking users.");
   }
 
-  let priceBeforeDiscount = Math.round(room.hourlyRate * durationHours);
-  if (durationHours >= 8 && room.fullDayRate) priceBeforeDiscount = room.fullDayRate;
-  else if (durationHours >= 4 && room.halfDayRate) priceBeforeDiscount = room.halfDayRate;
+  let priceBeforeDiscount = await bookingPriceForRoom(room, durationHours, formData);
 
   let creditHoursUsed = 0;
   if (isMeetingRoomType(room.roomType) && room.creditsCanBeUsed) {
@@ -500,7 +519,7 @@ export async function updateBooking(bookingId: string, formData: FormData) {
   if (durationHours * 60 < room.minBookingMinutes) await redirectWithError("/bookings", `Minimum booking is ${room.minBookingMinutes} minutes.`);
   const schedule = parseOperatingHours(room.operatingHoursJson ?? room.location?.operatingHoursJson);
   if (!isWithinOperatingHours(startsAt, endsAt, schedule)) {
-    await redirectWithError("/bookings", "Selected time is outside the operating hours.");
+    await redirectWithError("/bookings", `Selected time is outside the operating hours. ${room.name} is available: ${operatingHoursLabelForDate(startsAt, schedule)}.`);
   }
 
   const clash = await prisma.booking.findFirst({
@@ -519,9 +538,7 @@ export async function updateBooking(bookingId: string, formData: FormData) {
     await redirectWithError("/bookings", "Focus room and phone booth bookings are free only for active coworking users.");
   }
 
-  let priceBeforeDiscount = Math.round(room.hourlyRate * durationHours);
-  if (durationHours >= 8 && room.fullDayRate) priceBeforeDiscount = room.fullDayRate;
-  else if (durationHours >= 4 && room.halfDayRate) priceBeforeDiscount = room.halfDayRate;
+  let priceBeforeDiscount = await bookingPriceForRoom(room, durationHours, formData);
 
   let availableCredits = customer.remainingMeetingCreditHours;
   if (existing.customerId === customerId) availableCredits += existing.creditHoursUsed;
@@ -716,6 +733,7 @@ export async function upsertRoom(formData: FormData) {
     hourlyRate: money,
     halfDayRate: optionalMoney,
     fullDayRate: optionalMoney,
+    bookingPricingMode: z.enum(["HOURLY", "HALF_DAY_FULL_DAY"]),
     creditsCanBeUsed: z.boolean(),
     isActive: z.boolean(),
     minBookingMinutes: z.coerce.number().int().min(15),

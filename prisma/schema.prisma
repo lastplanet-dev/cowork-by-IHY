@@ -88,7 +88,7 @@ model Location {
   address               String?
   phone                 String?
   coworkingSeatCapacity Int      @default(0)
-  operatingHoursJson    String   @default("{\"sun\":{\"open\":false,\"start\":\"09:00\",\"end\":\"18:00\"},\"mon\":{\"open\":true,\"start\":\"09:00\",\"end\":\"18:00\"},\"tue\":{\"open\":true,\"start\":\"09:00\",\"end\":\"18:00\"},\"wed\":{\"open\":true,\"start\":\"09:00\",\"end\":\"18:00\"},\"thu\":{\"open\":true,\"start\":\"09:00\",\"end\":\"18:00\"},\"fri\":{\"open\":true,\"start\":\"09:00\",\"end\":\"18:00\"},\"sat\":{\"open\":true,\"start\":\"09:00\",\"end\":\"17:00\"}}")
+  operatingHoursJson    String   @default("{\"sun\":{\"open\":true,\"start\":\"09:00\",\"end\":\"18:00\"},\"mon\":{\"open\":true,\"start\":\"09:00\",\"end\":\"18:00\"},\"tue\":{\"open\":true,\"start\":\"09:00\",\"end\":\"18:00\"},\"wed\":{\"open\":true,\"start\":\"09:00\",\"end\":\"18:00\"},\"thu\":{\"open\":true,\"start\":\"09:00\",\"end\":\"18:00\"},\"fri\":{\"open\":true,\"start\":\"09:00\",\"end\":\"18:00\"},\"sat\":{\"open\":true,\"start\":\"09:00\",\"end\":\"17:00\"}}")
   isActive              Boolean  @default(true)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -231,6 +231,7 @@ model Room {
   hourlyRate         Int
   halfDayRate        Int?
   fullDayRate        Int?
+  bookingPricingMode String   @default("HOURLY")
   isActive           Boolean  @default(true)
   creditsCanBeUsed   Boolean  @default(false)
   minBookingMinutes  Int      @default(60)

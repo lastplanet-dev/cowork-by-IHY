@@ -1,7 +1,7 @@
 "use client";
 
 import { ReactNode, useState } from "react";
-import { isWithinOperatingHours, operatingWindowForYangonDate, parseOperatingHours, parseYangonDateTimeToUtc } from "@/lib/yangon-time";
+import { isWithinOperatingHours, operatingHoursLabelForDate, operatingWindowForYangonDate, parseOperatingHours, parseYangonDateTimeToUtc } from "@/lib/yangon-time";
 
 type RoomSchedule = { id: string; operatingHoursJson?: string | null };
 
@@ -30,7 +30,7 @@ export function BookingTimeGuard({
     if (startsAt < new Date()) return "Selected time is in the past. Please choose a future time.";
     const room = rooms.find((item) => item.id === roomId);
     const hours = parseOperatingHours(room?.operatingHoursJson ?? locationOperatingHoursJson);
-    if (!isWithinOperatingHours(startsAt, endsAt, hours)) return "Selected time is outside the operating hours.";
+    if (!isWithinOperatingHours(startsAt, endsAt, hours)) return `Selected time is outside the operating hours. Available: ${operatingHoursLabelForDate(startsAt, hours)}.`;
     return "";
   }
 
@@ -38,7 +38,6 @@ export function BookingTimeGuard({
     <form
       action={action}
       className={className}
-      onChange={(event) => setMessage(validate(new FormData(event.currentTarget)))}
       onSubmit={(event) => {
         const nextMessage = validate(new FormData(event.currentTarget));
         setMessage(nextMessage);
@@ -84,7 +83,6 @@ export function CoworkingBookingGuard({
     <form
       action={action}
       className={className}
-      onChange={(event) => setMessage(validate(new FormData(event.currentTarget)))}
       onSubmit={(event) => {
         const nextMessage = validate(new FormData(event.currentTarget));
         setMessage(nextMessage);

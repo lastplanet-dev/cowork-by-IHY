@@ -7,7 +7,7 @@ export type OperatingHours = Record<string, OperatingDay>;
 export const dayKeys = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
 export const defaultOperatingHours: OperatingHours = {
-  sun: { open: false, start: "09:00", end: "18:00" },
+  sun: { open: true, start: "09:00", end: "18:00" },
   mon: { open: true, start: "09:00", end: "18:00" },
   tue: { open: true, start: "09:00", end: "18:00" },
   wed: { open: true, start: "09:00", end: "18:00" },
@@ -124,6 +124,21 @@ export function isWithinOperatingHours(start: Date, end: Date, schedule: Operati
   const open = parseYangonDateTimeToUtc(`${parts.year}-${pad(parts.month)}-${pad(parts.day)}T${rule.start}`);
   const close = parseYangonDateTimeToUtc(`${parts.year}-${pad(parts.month)}-${pad(parts.day)}T${rule.end}`);
   return start >= open && end <= close && end > start;
+}
+
+export function operatingHoursLabelForDate(date: Date, schedule: OperatingHours) {
+  const parts = yangonParts(date);
+  const day = dayKeyForDateParts(parts.year, parts.month, parts.day);
+  const rule = schedule[day];
+  if (!rule?.open) return `${day.toUpperCase()} closed`;
+  return `${day.toUpperCase()} ${rule.start}-${rule.end}`;
+}
+
+export function weeklyOperatingHoursSummary(schedule: OperatingHours) {
+  return dayKeys.map((day) => {
+    const rule = schedule[day];
+    return rule.open ? `${day.toUpperCase()} ${rule.start}-${rule.end}` : `${day.toUpperCase()} closed`;
+  }).join(" · ");
 }
 
 export function operatingWindowForYangonDate(dateInput: string, schedule: OperatingHours) {
