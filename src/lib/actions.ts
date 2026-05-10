@@ -432,14 +432,21 @@ export async function createBooking(formData: FormData) {
 
   const active = customer.membershipExpiresAt && customer.membershipExpiresAt >= new Date() && customer.remainingCoworkingDays > 0;
   if (isFocusRoomType(room.roomType) && !active) {
-    await redirectWithError("/bookings", "Focus room and phone booth bookings are free only for active coworking users.");
+    await redirectWithError("/bookings", `${customer.fullName} has no active membership or remaining coworking days. Focus room and phone booth bookings are free only for active coworking users.`);
   }
 
   let priceBeforeDiscount = await bookingPriceForRoom(room, durationHours, formData);
 
+  const useMeetingCredit = formData.get("useMeetingCredit") === "on";
   let creditHoursUsed = 0;
-  if (isMeetingRoomType(room.roomType) && room.creditsCanBeUsed) {
+  if (useMeetingCredit && isMeetingRoomType(room.roomType) && room.creditsCanBeUsed) {
     creditHoursUsed = Math.min(durationHours, customer.remainingMeetingCreditHours);
+  }
+  if (useMeetingCredit && !room.creditsCanBeUsed) {
+    await redirectWithError("/bookings", `${room.name} is not configured to accept meeting room credits.`);
+  }
+  if (useMeetingCredit && creditHoursUsed <= 0) {
+    await redirectWithError("/bookings", `${customer.fullName} has no available meeting room credit.`);
   }
   if (isTrainingRoomType(room.roomType)) creditHoursUsed = 0;
   if (isFocusRoomType(room.roomType)) priceBeforeDiscount = 0;
@@ -535,16 +542,23 @@ export async function updateBooking(bookingId: string, formData: FormData) {
 
   const active = customer.membershipExpiresAt && customer.membershipExpiresAt >= new Date() && customer.remainingCoworkingDays > 0;
   if (isFocusRoomType(room.roomType) && !active) {
-    await redirectWithError("/bookings", "Focus room and phone booth bookings are free only for active coworking users.");
+    await redirectWithError("/bookings", `${customer.fullName} has no active membership or remaining coworking days. Focus room and phone booth bookings are free only for active coworking users.`);
   }
 
   let priceBeforeDiscount = await bookingPriceForRoom(room, durationHours, formData);
 
   let availableCredits = customer.remainingMeetingCreditHours;
   if (existing.customerId === customerId) availableCredits += existing.creditHoursUsed;
+  const useMeetingCredit = formData.get("useMeetingCredit") === "on";
   let creditHoursUsed = 0;
-  if (isMeetingRoomType(room.roomType) && room.creditsCanBeUsed) {
+  if (useMeetingCredit && isMeetingRoomType(room.roomType) && room.creditsCanBeUsed) {
     creditHoursUsed = Math.min(durationHours, availableCredits);
+  }
+  if (useMeetingCredit && !room.creditsCanBeUsed) {
+    await redirectWithError("/bookings", `${room.name} is not configured to accept meeting room credits.`);
+  }
+  if (useMeetingCredit && creditHoursUsed <= 0) {
+    await redirectWithError("/bookings", `${customer.fullName} has no available meeting room credit.`);
   }
   if (isTrainingRoomType(room.roomType)) creditHoursUsed = 0;
   if (isFocusRoomType(room.roomType)) priceBeforeDiscount = 0;
