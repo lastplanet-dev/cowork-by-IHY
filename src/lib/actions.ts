@@ -757,7 +757,7 @@ export async function upsertRoom(formData: FormData) {
     creditsCanBeUsed: formData.get("creditsCanBeUsed") === "on",
     isActive: formData.get("isActive") === "on"
   });
-  const operatingHoursJson = formData.get("inheritLocationHours") === "on" ? null : operatingHoursFromForm(formData, "roomHours");
+  const operatingHoursJson = operatingHoursFromForm(formData, "roomHours");
 
   if (id) await prisma.room.update({ where: { id }, data: { ...data, operatingHoursJson, locationId } });
   else await prisma.room.create({ data: { ...data, operatingHoursJson, locationId } });
