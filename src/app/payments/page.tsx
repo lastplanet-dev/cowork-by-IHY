@@ -1,6 +1,6 @@
 import { format } from "date-fns";
 import { PageHeader } from "@/components/PageHeader";
-import { completePayment, updatePayment, voidPayment } from "@/lib/actions";
+import { completePayment, createPaymentForBooking, updatePayment, voidPayment } from "@/lib/actions";
 import { prisma } from "@/lib/prisma";
 import { dateTimeLocal, mmk, shortDate } from "@/lib/format";
 import { getCurrentStaff, getOperationalLocation } from "@/lib/session";
@@ -16,7 +16,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
       params.q ? { OR: [{ receiptNumber: { contains: params.q } }, { customer: { fullName: { contains: params.q } } }] } : {}
     ]
   };
-  const [payments, summary] = await Promise.all([
+  const [payments, summary, unpaidBookingsWithoutPayment] = await Promise.all([
     prisma.payment.findMany({
       where,
       include: {
@@ -30,7 +30,17 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
       orderBy: [{ status: "asc" }, { paymentDate: "desc" }],
       take: 100
     }),
-    prisma.payment.groupBy({ by: ["status"], where: locationPaymentWhere, _sum: { amount: true }, _count: true })
+    prisma.payment.groupBy({ by: ["status"], where: locationPaymentWhere, _sum: { amount: true }, _count: true }),
+    prisma.booking.findMany({
+      where: {
+        room: { locationId: activeLocation.id },
+        payment: null,
+        paymentStatus: { in: ["UNPAID", "PARTIALLY_PAID"] }
+      },
+      include: { customer: true, room: true },
+      orderBy: { startsAt: "desc" },
+      take: 50
+    })
   ]);
   const canAdjust = staff.role === "SUPER_ADMIN";
   const pendingPayments = payments.filter((payment) => payment.status === "UNPAID" || payment.status === "PARTIALLY_PAID");
@@ -67,7 +77,17 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
                   <td><CompletePaymentForm payment={p} /></td>
                 </tr>
               ))}
-              {!pendingPayments.length && <tr><td colSpan={6} className="muted">No pending payments to collect.</td></tr>}
+              {unpaidBookingsWithoutPayment.map((booking) => (
+                <tr key={booking.id}>
+                  <td>{booking.customer.fullName}<br /><span className="muted">{booking.customer.phone}</span></td>
+                  <td>Room booking</td>
+                  <td>{booking.room.name}<br /><span className="muted">{shortDate(booking.startsAt)} · payment record missing</span></td>
+                  <td><strong>{mmk(booking.finalPrice)}</strong></td>
+                  <td><span className="status warn">{booking.paymentStatus === "PARTIALLY_PAID" ? "Partially paid" : "Unpaid"}</span></td>
+                  <td><CompleteBookingPaymentForm booking={booking} /></td>
+                </tr>
+              ))}
+              {!pendingPayments.length && !unpaidBookingsWithoutPayment.length && <tr><td colSpan={6} className="muted">No pending payments to collect.</td></tr>}
             </tbody>
           </table>
         </section>
@@ -92,6 +112,11 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
 function CompletePaymentForm({ payment }: { payment: any }) {
   return (
     <form action={completePayment.bind(null, payment.id)} className="payment-complete-form">
+      <select name="status" defaultValue="PAID">
+        <option value="PAID">Fully paid</option>
+        <option value="PARTIALLY_PAID">Partially paid</option>
+      </select>
+      <input name="amountPaid" type="number" min="0" placeholder="Deposit amount" defaultValue={payment.status === "PARTIALLY_PAID" ? payment.amount : ""} />
       <select name="method" defaultValue={payment.method}>
         <option value="CASH">Cash</option>
         <option value="KBZPAY">KBZPay</option>
@@ -101,7 +126,29 @@ function CompletePaymentForm({ payment }: { payment: any }) {
         <option value="OTHER">Other</option>
       </select>
       <input name="receiptNumber" placeholder="Receipt/reference" defaultValue={payment.receiptNumber ?? ""} />
-      <button className="btn">Mark paid</button>
+      <button className="btn">Update payment</button>
+    </form>
+  );
+}
+
+function CompleteBookingPaymentForm({ booking }: { booking: any }) {
+  return (
+    <form action={createPaymentForBooking.bind(null, booking.id)} className="payment-complete-form">
+      <select name="status" defaultValue="PAID">
+        <option value="PAID">Fully paid</option>
+        <option value="PARTIALLY_PAID">Partially paid</option>
+      </select>
+      <input name="amountPaid" type="number" min="0" placeholder="Deposit amount" />
+      <select name="method" defaultValue="CASH">
+        <option value="CASH">Cash</option>
+        <option value="KBZPAY">KBZPay</option>
+        <option value="WAVEPAY">WavePay</option>
+        <option value="BANK_TRANSFER">Bank transfer</option>
+        <option value="CARD">Card</option>
+        <option value="OTHER">Other</option>
+      </select>
+      <input name="receiptNumber" placeholder="Receipt/reference" />
+      <button className="btn">Record payment</button>
     </form>
   );
 }

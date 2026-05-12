@@ -885,16 +885,25 @@ export async function updatePayment(paymentId: string, formData: FormData) {
 
 export async function completePayment(paymentId: string, formData: FormData) {
   const staff = await getCurrentStaff();
-  const existing = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
+  const existing = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId }, include: { booking: true } });
   const method = String(formData.get("method") || existing.method || "CASH") as PaymentMethod;
+  const status = String(formData.get("status") || "PAID") as PaymentStatus;
   const receiptNumber = optionalText(formData, "receiptNumber") ?? existing.receiptNumber;
   const paymentDate = new Date();
+  const fullAmount = existing.booking?.finalPrice ?? existing.amount;
+  let amount = fullAmount;
+  if (status === PaymentStatus.PARTIALLY_PAID) {
+    amount = money.parse(formData.get("amountPaid"));
+    if (amount <= 0) await redirectWithError("/payments", "Please enter the paid deposit amount.");
+    if (amount >= fullAmount) await redirectWithError("/payments", "Deposit amount should be less than the full amount. Use Paid if fully collected.");
+  }
 
   await prisma.$transaction(async (tx) => {
     await tx.payment.update({
       where: { id: paymentId },
       data: {
-        status: PaymentStatus.PAID,
+        status,
+        amount,
         method,
         receiptNumber,
         paymentDate,
@@ -905,7 +914,7 @@ export async function completePayment(paymentId: string, formData: FormData) {
     if (existing.bookingId) {
       await tx.booking.update({
         where: { id: existing.bookingId },
-        data: { paymentStatus: PaymentStatus.PAID }
+        data: { paymentStatus: status }
       });
     }
 
@@ -922,7 +931,42 @@ export async function completePayment(paymentId: string, formData: FormData) {
   revalidatePath("/payments");
   revalidatePath("/dashboard");
   revalidatePath("/bookings");
-  await setFlash("Payment marked as paid successfully.");
+  await setFlash(status === PaymentStatus.PARTIALLY_PAID ? "Payment updated as partially paid." : "Payment marked as paid successfully.");
+}
+
+export async function createPaymentForBooking(bookingId: string, formData: FormData) {
+  const staff = await getCurrentStaff();
+  const booking = await prisma.booking.findUniqueOrThrow({ where: { id: bookingId }, include: { room: true } });
+  const method = String(formData.get("method") || "CASH") as PaymentMethod;
+  const status = String(formData.get("status") || "PAID") as PaymentStatus;
+  let amount = booking.finalPrice;
+  if (status === PaymentStatus.PARTIALLY_PAID) {
+    amount = money.parse(formData.get("amountPaid"));
+    if (amount <= 0) await redirectWithError("/payments", "Please enter the paid deposit amount.");
+    if (amount >= booking.finalPrice) await redirectWithError("/payments", "Deposit amount should be less than the full amount. Use Paid if fully collected.");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.payment.create({
+      data: {
+        customerId: booking.customerId,
+        bookingId,
+        paymentFor: PaymentFor.BOOKING,
+        amount,
+        method,
+        status,
+        receiptNumber: optionalText(formData, "receiptNumber"),
+        receivedById: staff.id
+      }
+    });
+    await tx.booking.update({ where: { id: bookingId }, data: { paymentStatus: status } });
+    await tx.activityLog.create({ data: { staffId: staff.id, message: `Recorded ${booking.room.name} booking payment`, entity: "booking", entityId: bookingId } });
+  });
+
+  revalidatePath("/payments");
+  revalidatePath("/dashboard");
+  revalidatePath("/bookings");
+  await setFlash(status === PaymentStatus.PARTIALLY_PAID ? "Booking payment recorded as partially paid." : "Booking payment marked as paid.");
 }
 
 export async function voidPayment(paymentId: string, formData: FormData) {
