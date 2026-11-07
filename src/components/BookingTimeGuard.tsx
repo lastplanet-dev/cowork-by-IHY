@@ -24,10 +24,11 @@ export function BookingTimeGuard({
     const startsAtText = String(formData.get("startsAt") || "");
     const endsAtText = String(formData.get("endsAt") || "");
     const roomId = String(formData.get("roomId") || "");
+    const allowPastBooking = formData.get("allowPastBooking") === "on";
     if (!startsAtText || !endsAtText || !roomId) return "";
     const startsAt = parseYangonDateTimeToUtc(startsAtText);
     const endsAt = parseYangonDateTimeToUtc(endsAtText);
-    if (startsAt < new Date()) return "Selected time is in the past. Please choose a future time.";
+    if (startsAt < new Date() && !allowPastBooking) return "Selected time is in the past. Select Historical rental record to enter a backdated rental.";
     const room = rooms.find((item) => item.id === roomId);
     const hours = parseOperatingHours(room?.operatingHoursJson ?? locationOperatingHoursJson);
     if (!isWithinOperatingHours(startsAt, endsAt, hours)) return `Selected time is outside the operating hours. Available: ${operatingHoursLabelForDate(startsAt, hours)}.`;

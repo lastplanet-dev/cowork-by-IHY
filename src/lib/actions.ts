@@ -403,7 +403,11 @@ export async function createBooking(formData: FormData) {
   const roomId = requiredText.parse(formData.get("roomId"));
   const startsAt = parseYangonDateTimeToUtc(String(formData.get("startsAt")));
   const endsAt = parseYangonDateTimeToUtc(String(formData.get("endsAt")));
-  if (startsAt < new Date()) await redirectWithError("/bookings", "Selected time is in the past. Please choose a future time.");
+  const allowPastBooking = formData.get("allowPastBooking") === "on";
+  const isHistoricalRecord = startsAt < new Date();
+  if (isHistoricalRecord && !allowPastBooking) {
+    await redirectWithError("/bookings", "Selected time is in the past. Select Historical rental record to enter a backdated rental.");
+  }
   if (endsAt <= startsAt) await redirectWithError("/bookings", "End time must be after start time.");
 
   const [room, customer] = await Promise.all([
@@ -473,7 +477,7 @@ export async function createBooking(formData: FormData) {
         creditHoursUsed,
         paymentStatus,
         notes: optionalText(formData, "notes"),
-        status: String(formData.get("status") || "CONFIRMED") as BookingStatus
+        status: String(formData.get("status") || (isHistoricalRecord ? "COMPLETED" : "CONFIRMED")) as BookingStatus
       }
     });
 
@@ -496,7 +500,7 @@ export async function createBooking(formData: FormData) {
       });
     }
 
-    await tx.activityLog.create({ data: { staffId: staff.id, message: `Created ${room.name} booking`, entity: "booking", entityId: booking.id } });
+    await tx.activityLog.create({ data: { staffId: staff.id, message: `${isHistoricalRecord ? "Recorded historical" : "Created"} ${room.name} booking`, entity: "booking", entityId: booking.id } });
   });
 
   revalidatePath("/bookings");
@@ -511,7 +515,10 @@ export async function updateBooking(bookingId: string, formData: FormData) {
   const roomId = requiredText.parse(formData.get("roomId"));
   const startsAt = parseYangonDateTimeToUtc(String(formData.get("startsAt")));
   const endsAt = parseYangonDateTimeToUtc(String(formData.get("endsAt")));
-  if (startsAt < new Date()) await redirectWithError("/bookings", "Selected time is in the past. Please choose a future time.");
+  const allowPastBooking = formData.get("allowPastBooking") === "on";
+  if (startsAt < new Date() && !allowPastBooking) {
+    await redirectWithError("/bookings", "Selected time is in the past. Select Historical rental record to edit a backdated rental.");
+  }
   if (endsAt <= startsAt) await redirectWithError("/bookings", "End time must be after start time.");
 
   const existing = await prisma.booking.findUniqueOrThrow({ where: { id: bookingId } });
